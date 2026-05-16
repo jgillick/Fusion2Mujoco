@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Generator: Adobe Illustrator 27.0.1, SVG Export Plug-In . SVG Version: 6.00 Build 0)  -->
+
+<svg
+   version="1.1"
+   id="Layer_1"
+   x="0px"
+   y="0px"
+   viewBox="0 0 105 105"
+   xml:space="preserve"
+   sodipodi:docname="mujoco_banner.svg"
+   width="105"
+   height="105"
+   inkscape:version="1.4 (e7c3feb1, 2024-10-09)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"><defs
+   id="defs11">
+	
+
+		
+		
+		
+		
+		
+		
+	</defs><sodipodi:namedview
+   id="namedview11"
+   pagecolor="#505050"
+   bordercolor="#eeeeee"
+   borderopacity="1"
+   inkscape:showpageshadow="0"
+   inkscape:pageopacity="0"
+   inkscape:pagecheckerboard="0"
+   inkscape:deskcolor="#505050"
+   inkscape:zoom="1.5849079"
+   inkscape:cx="162.15453"
+   inkscape:cy="-10.726175"
+   inkscape:window-width="1512"
+   inkscape:window-height="821"
+   inkscape:window-x="0"
+   inkscape:window-y="38"
+   inkscape:window-maximized="0"
+   inkscape:current-layer="Layer_1" />
+<style
+   type="text/css"
+   id="style1">
+	.st0{fill:url(#SVGID_1_);}
+	.st1{fill:#FFFFFF;}
+</style>
+<g
+   id="a"
+   transform="matrix(0.17473789,0,0,0.69906792,-1.1835309e-6,2.74693e-7)">
+	
+		<linearGradient
+   id="SVGID_1_"
+   gradientUnits="userSpaceOnUse"
+   x1="33.3255"
+   y1="10.9703"
+   x2="580.02551"
+   y2="139.11031"
+   gradientTransform="matrix(1.07,0,0,-1.23,-34.53,169.2672)">
+		<stop
+   offset="0"
+   style="stop-color:#0F3693"
+   id="stop1" />
+		<stop
+   offset="4.000000e-02"
+   style="stop-color:#0F348D"
+   id="stop2" />
+		<stop
+   offset="0.31"
+   style="stop-color:#0F296B"
+   id="stop3" />
+		<stop
+   offset="0.56"
+   style="stop-color:#0F2253"
+   id="stop4" />
+		<stop
+   offset="0.79"
+   style="stop-color:#0F1D45"
+   id="stop5" />
+		<stop
+   offset="0.99"
+   style="stop-color:#101C40"
+   id="stop6" />
+	</linearGradient>
+	<rect
+   y="0"
+   class="st0"
+   width="600.90002"
+   height="150.2"
+   id="rect6"
+   style="fill:url(#SVGID_1_)"
+   x="0" />
+</g>
+<path
+   class="st1"
+   d="M 52.45,95.800002 32.75,48.499999 25.65,90.100002 H 12.85 L 28.25,9.1999985 v 0 L 52.75,67.399999 78.25,9.2999985 v 0 l 13.9,80.9000025 h -12.8 l -6.3,-41.600003 z"
+   id="path6" />
+</svg>
