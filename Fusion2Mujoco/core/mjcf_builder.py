@@ -231,10 +231,9 @@ class MjcfBuilder:
 
     def build_body_geoms(self, body: MjcfBody, parent_el: ET.Element) -> ET.Element:
         """
-        Construct a the MJCF geom elements (and assets) for a body
+        Construct the MJCF geom elements for a body.
         """
         for mesh in body.mesh.mesh_items:
-            # Add geom
             attrs = {
                 "mesh": mesh.name,
                 "name": f"{body.name}_{mesh.name}_geom",

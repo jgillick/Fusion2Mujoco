@@ -99,7 +99,7 @@ class Exporter:
 
             # Now that we know how many unique meshes there are, set the total step count.
             # Steps: 2 (joints + links) + 2 per unique mesh (export STL + convexify)
-            unique_meshes = set([body.mesh.base_name for body in self.mjcf_bodies])
+            unique_meshes = set(body.mesh.base_name for body in self.mjcf_bodies)
             mesh_operations = len(unique_meshes)
             if self.convexify:
                 mesh_operations *= 2
@@ -149,30 +149,27 @@ class Exporter:
 
     def export_meshes(self):
         """
-        Export one STL per unique component into destination/meshes/.
-        Links that share the same underlying component are skipped after the
-        first occurrence is exported.
+        Export one merged STL per unique component into <destination>/meshes/.
         """
         self.log(f"Exporting meshes to {self.mesh_root}")
         export_manager = self.design.exportManager
         exported: dict[str, MeshCollection] = {}
         coacd.set_log_level("error")
         for body in self.mjcf_bodies:
-            # If this mesh has already been exported, update the mesh instance to the one already saved
+            # If this mesh has already been exported, reuse the cached instance.
             if body.mesh.base_name in exported:
                 body.mesh = exported[body.mesh.base_name]
                 continue
+
             mesh = body.mesh
-            exported[body.mesh.base_name] = mesh
+            exported[mesh.base_name] = mesh
 
             self.update_progress(f"Exporting mesh: {mesh.base_name}")
             mesh.export_visual_mesh(
                 mesh_root=self.mesh_root,
-                occurrence=body.occurrence,
                 export_manager=export_manager,
             )
 
-            # Create the collision meshes
             if self.convexify:
-                self.update_progress(f"Convexifying: {body.mesh.base_name}")
+                self.update_progress(f"Convexifying: {mesh.base_name}")
                 mesh.create_collision_mesh(self.mesh_root, self.convex_threshold)

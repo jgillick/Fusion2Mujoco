@@ -20,12 +20,17 @@ class Mesh:
 
 class MeshCollection:
     """
-    Manages the collection of meshes of a single component occurrence / mjcf body.
+    Manages the collection of meshes for a single component occurrence / mjcf body.
+
+    The visual STL is the result of merging all direct BRepBodies of the
+    component. Optional collision STLs are produced by CoACD decomposition of
+    that merged visual mesh.
     """
 
-    def __init__(self):
+    def __init__(self, bodies: list[adsk.fusion.BRepBody]):
         self.base_name: str | None = None
         self.collision_meshes: list[str] = []
+        self.bodies = bodies
 
     @property
     def mesh_items(self) -> list[Mesh]:
@@ -72,33 +77,50 @@ class MeshCollection:
     def export_visual_mesh(
         self,
         mesh_root: str,
-        occurrence: adsk.fusion.Occurrence,
         export_manager: adsk.fusion.ExportManager,
     ):
         """
-        Export the visual mesh to file
+        Export the visual mesh for a component to file.
+
+        Each body in ``self.bodies`` is exported individually (Fusion's API
+        does not support multi-body export to a single file), then all parts
+        are concatenated with trimesh into one ``visual.stl``. Temporary
+        per-body files are removed after the merge.
 
         Args:
-            mesh_root: The root directory all meshes are exported to
-            occurrence: The component occurrence to export the mesh from
-            export_manager: The Fusion export manager to use to export the mesh
+            mesh_root: The root directory all meshes are exported to.
+            export_manager: The Fusion export manager to use to export the mesh.
         """
-        # Create the output directory and visual file name
+        visible_bodies = [b for b in self.bodies if b.isLightBulbOn]
         visual_path = path.join(mesh_root, self.visual.file)
         visual_dir = path.dirname(visual_path)
         if not path.exists(visual_dir):
             os.makedirs(visual_dir)
 
-        # Export the mesh
-        stl_export_options = export_manager.createSTLExportOptions(
-            occurrence, visual_path
-        )
-        stl_export_options.sendToPrintUtility = False
-        stl_export_options.isBinaryFormat = True
-        stl_export_options.meshRefinement = (
-            adsk.fusion.MeshRefinementSettings.MeshRefinementLow
-        )
-        export_manager.execute(stl_export_options)
+        def export_body(entity, out_path):
+            opts = export_manager.createSTLExportOptions(entity, out_path)
+            opts.sendToPrintUtility = False
+            opts.isBinaryFormat = True
+            opts.meshRefinement = adsk.fusion.MeshRefinementSettings.MeshRefinementLow
+            export_manager.execute(opts)
+
+        if len(visible_bodies) == 1:
+            # Fast path: single body — export directly, no trimesh needed.
+            export_body(visible_bodies[0], visual_path)
+        else:
+            # Export each body to a temp file, then concatenate with trimesh.
+            temp_paths = []
+            for i, body in enumerate(visible_bodies):
+                temp_path = path.join(visual_dir, f"_tmp_{i}.stl")
+                export_body(body, temp_path)
+                temp_paths.append(temp_path)
+
+            parts = [trimesh.load(p, force="mesh") for p in temp_paths]
+            merged = trimesh.util.concatenate(parts)
+            merged.export(visual_path)
+
+            for p in temp_paths:
+                os.remove(p)
 
     def create_collision_mesh(self, mesh_root: str, convex_threshold: float):
         """

@@ -31,8 +31,9 @@ class MjcfBody:
         short_name (str | None): An optional abbreviated name assigned by
             ``MjcfBodyCollection.shorten_names()``. When set, ``name``
             returns this instead of the full sanitised path.
-        mesh (MeshCollection): The visual and collision mesh files associated
-            with this body's component.
+        mesh (MeshCollection): The visual and collision mesh files for this
+            body. The visual STL is built by merging all direct visible
+            BRepBodies of the component (child-component bodies are excluded).
     """
 
     def __init__(self, occurrence: adsk.fusion.Occurrence) -> None:
@@ -48,7 +49,7 @@ class MjcfBody:
             adsk.fusion.CalculationAccuracy.VeryHighCalculationAccuracy
         )
         self.short_name: str | None = None
-        self.mesh: MeshCollection = MeshCollection()
+        self.mesh: MeshCollection = MeshCollection(occurrence.component.bRepBodies)
 
     def get_parent_joint(self) -> Joint | None:
         """
@@ -209,11 +210,11 @@ class MjcfBodyCollection:
         exporter: Exporter, use_short_names: bool = False
     ) -> MjcfBodyCollection:
         """
-        Build a collection from all visible, leaf occurrences in the design.
+        Build a collection from all visible occurrences that have direct
+        BRepBodies in the design.
 
         Iterates over every occurrence in the root component, skipping those
-        that are hidden, have no visible bodies, or have child components
-        (since MuJoCo bodies must be leaves in the kinematic tree).
+        that are hidden or have no directly visible BRepBodies.
 
         Args:
             exporter (Exporter): The Exporter instance, used to access the
@@ -231,17 +232,17 @@ class MjcfBodyCollection:
         root: adsk.fusion.Component = exporter.root
         occs: list[adsk.fusion.Occurrence] = root.allOccurrences
         for occ in occs:
-            if not occ.isLightBulbOn or not utils.component_has_bodies(occ.component):
+            comp = occ.component
+            if not occ.isLightBulbOn:
                 continue
-            if occ.childOccurrences.count > 0:
+            if not comp.isBodiesFolderLightBulbOn:
+                continue
+            visible_bodies = [b for b in comp.bRepBodies if b.isLightBulbOn]
+            if not visible_bodies:
                 exporter.log(
-                    f"Skipping {occ.fullPathName} because it has child components"
+                    f"Warning: no visible bodies found for '{occ.fullPathName}'; skipping."
                 )
                 continue
-
-            comp = occ.component
-            mjcf_body = MjcfBody(occ)
-            mjcf_body.mesh.base_name = comp.name
 
             # Track entity tokens per component name to detect distinct
             # components that happen to share the same name.
@@ -251,9 +252,13 @@ class MjcfBodyCollection:
 
             # When multiple distinct components share a name, suffix the mesh
             # base name with a 1-based index to keep filenames unique.
+            comp_base_name = comp.name
             if len(tokens) > 1:
                 entity_index = tokens.index(comp.entityToken) + 1
-                mjcf_body.mesh.base_name += f"_{entity_index}"
+                comp_base_name += f"_{entity_index}"
+
+            mjcf_body = MjcfBody(occ)
+            mjcf_body.mesh.base_name = comp_base_name
 
             items.append(mjcf_body)
 
