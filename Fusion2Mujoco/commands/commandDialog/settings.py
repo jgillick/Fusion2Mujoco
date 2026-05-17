@@ -13,6 +13,7 @@ DEFAULT_SETTINGS = {
     "should_convexify": False,
     "convex_threshold": 0.2,
     "with_environment": True,
+    "with_colors": True,
 }
 
 

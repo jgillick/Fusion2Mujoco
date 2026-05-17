@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import os
 from os import path
 import adsk, adsk.core
 import xml.etree.ElementTree as ET
-from .mjcf_body import MjcfBody
+from .body import MjcfBody
 from .joint import Joint
 from . import math_operation as math_op
 from typing import TYPE_CHECKING
@@ -21,9 +20,15 @@ class MjcfBuilder:
     Build the Mujoco XML file for the model
     """
 
-    def __init__(self, exporter: Exporter, with_environment: bool = True):
+    def __init__(
+        self,
+        exporter: Exporter,
+        with_environment: bool = True,
+        with_colors: bool = True,
+    ):
         self.exporter = exporter
         self.with_environment = with_environment
+        self.with_colors = with_colors
 
         self.root_el: ET.Element = None
         self.compiler_el: ET.Element = None
@@ -31,6 +36,7 @@ class MjcfBuilder:
         self.worldbody_el: ET.Element = None
         self.rootbody_el: ET.Element = None
 
+        self.built_materials: dict[str, str] = {}
         self.has_collision_meshes = exporter.convexify
         self.root_bodies: set[MjcfBody] = set([])
         self.joint_relationships: dict[str, list[MjcfBody]] = {}
@@ -47,6 +53,7 @@ class MjcfBuilder:
         self.build_compiler()
         self.build_defaults()
         self.build_assets()
+        self.build_material_assets()
         self.build_worldbody()
         self.build_environment()
 
@@ -243,6 +250,8 @@ class MjcfBuilder:
             }
             if mesh.type == "collision":
                 attrs["class"] = "collision"
+            elif self.with_colors and body.mesh.base_name in self.built_materials:
+                attrs["material"] = self.built_materials[body.mesh.base_name]
             ET.SubElement(parent_el, "geom", attrs)
 
     def build_body_inertial(self, body: MjcfBody, parent_el: ET.Element) -> ET.Element:
@@ -266,6 +275,35 @@ class MjcfBuilder:
         }
 
         parent_el.append(inertial_ele)
+
+    def build_material_assets(self):
+        """
+        Add body material assets
+        """
+        if not self.with_colors:
+            return
+
+        for body in self.exporter.mjcf_bodies:
+            # Return the material name if it has already been built/added
+            material_name = f"{body.mesh.base_name}_mat"
+            if body.mesh.base_name in self.built_materials:
+                continue
+
+            appearance = body.get_appearance()
+            if appearance is None:
+                continue
+
+            # Material asset
+            attrs: dict[str, str] = {"name": material_name}
+            if appearance.rgba is not None:
+                attrs["rgba"] = "{:.4f} {:.4f} {:.4f} {:.4f}".format(*appearance.rgba)
+            if appearance.roughness is not None:
+                attrs["roughness"] = f"{appearance.roughness:.4f}"
+            if appearance.metallic is not None:
+                attrs["metallic"] = f"{appearance.metallic:.4f}"
+
+            self.built_materials[body.mesh.base_name] = material_name
+            ET.SubElement(self.assets_el, "material", attrs)
 
     def build_environment(self):
         """

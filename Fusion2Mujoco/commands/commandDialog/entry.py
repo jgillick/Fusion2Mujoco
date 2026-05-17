@@ -113,6 +113,17 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         This is useful if the model will be imported into simulation environments.
         """
 
+    colors_input = inputs.addBoolValueInput(
+        "with_colors", "Include colors", True, "", settings["with_colors"]
+    )
+    colors_input.tooltip = "Export component appearance colors and materials"
+    colors_input.tooltipDescription = """
+        Reads the appearance (color, roughness, metalness) assigned to each
+        component in Fusion 360 and writes it into the MuJoCo XML.
+
+        This does not include textures/patterns.
+        """
+
     short_names_input = inputs.addBoolValueInput(
         "use_short_names", "Use short names", True, "", settings["use_short_names"]
     )
@@ -174,6 +185,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
     inputs = args.command.commandInputs
     model_name: str = inputs.itemById("model_name").value.strip()
     with_environment: bool = inputs.itemById("with_environment").value
+    with_colors: bool = inputs.itemById("with_colors").value
     use_short_names: bool = inputs.itemById("use_short_names").value
 
     should_convexify: bool = inputs.itemById("should_convexify").value
@@ -185,6 +197,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
     save_settings(
         {
             "with_environment": with_environment,
+            "with_colors": with_colors,
             "use_short_names": use_short_names,
             "should_convexify": should_convexify,
             "convex_threshold": inputs.itemById("convex_threshold").value,
@@ -196,6 +209,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
         use_short_names=use_short_names,
         convex_threshold=convex_threshold,
         with_environment=with_environment,
+        with_colors=with_colors,
     )
     exporter.export()
 

@@ -3,7 +3,7 @@ import adsk, adsk.core, adsk.fusion, traceback
 import os
 from os import path
 from .mesh import MeshCollection
-from .mjcf_body import MjcfBodyCollection
+from .body_collection import MjcfBodyCollection
 from .mjcf_builder import MjcfBuilder
 
 MESH_DIR_NAME = "meshes"
@@ -24,6 +24,7 @@ class Exporter:
         use_short_names: bool = False,
         convex_threshold: float | None = None,
         with_environment: bool = True,
+        with_colors: bool = True,
     ):
         self.name = name
         self.design = None
@@ -32,6 +33,7 @@ class Exporter:
         self.convexify: bool = convex_threshold is not None
         self.convex_threshold: float | None = convex_threshold
         self.with_environment: bool = with_environment
+        self.with_colors: bool = with_colors
         self.destination: str = None
         self.mesh_root: str = None
         self.mjcf_bodies: MjcfBodyCollection = MjcfBodyCollection()
@@ -110,7 +112,9 @@ class Exporter:
 
             # Build/export the mujoco XML file
             mjcfBuilder = MjcfBuilder(
-                exporter=self, with_environment=self.with_environment
+                exporter=self,
+                with_environment=self.with_environment,
+                with_colors=self.with_colors,
             )
             mjcfBuilder.build()
             mjcfBuilder.save()

@@ -31,6 +31,7 @@ class MeshCollection:
         self.base_name: str | None = None
         self.collision_meshes: list[str] = []
         self.bodies = bodies
+        self.visible_bodies = [b for b in bodies if b.isLightBulbOn]
 
     @property
     def mesh_items(self) -> list[Mesh]:
@@ -91,7 +92,6 @@ class MeshCollection:
             mesh_root: The root directory all meshes are exported to.
             export_manager: The Fusion export manager to use to export the mesh.
         """
-        visible_bodies = [b for b in self.bodies if b.isLightBulbOn]
         visual_path = path.join(mesh_root, self.visual.file)
         visual_dir = path.dirname(visual_path)
         if not path.exists(visual_dir):
@@ -104,13 +104,13 @@ class MeshCollection:
             opts.meshRefinement = adsk.fusion.MeshRefinementSettings.MeshRefinementLow
             export_manager.execute(opts)
 
-        if len(visible_bodies) == 1:
+        if len(self.visible_bodies) == 1:
             # Fast path: single body — export directly, no trimesh needed.
-            export_body(visible_bodies[0], visual_path)
+            export_body(self.visible_bodies[0], visual_path)
         else:
             # Export each body to a temp file, then concatenate with trimesh.
             temp_paths = []
-            for i, body in enumerate(visible_bodies):
+            for i, body in enumerate(self.visible_bodies):
                 temp_path = path.join(visual_dir, f"_tmp_{i}.stl")
                 export_body(body, temp_path)
                 temp_paths.append(temp_path)
