@@ -22,6 +22,7 @@ class Exporter:
         self,
         name: str = "Model",
         use_short_names: bool = False,
+        mesh_resolution: str = "Low",
         convex_threshold: float | None = None,
         with_environment: bool = True,
         with_colors: bool = True,
@@ -30,6 +31,7 @@ class Exporter:
         self.design = None
         self.rootComp = None
         self.short_body_names: bool = use_short_names
+        self.mesh_resolution: str = mesh_resolution
         self.convexify: bool = convex_threshold is not None
         self.convex_threshold: float | None = convex_threshold
         self.with_environment: bool = with_environment
@@ -172,6 +174,7 @@ class Exporter:
             mesh.export_visual_mesh(
                 mesh_root=self.mesh_root,
                 export_manager=export_manager,
+                mesh_resolution=self.mesh_resolution,
             )
 
             if self.convexify:

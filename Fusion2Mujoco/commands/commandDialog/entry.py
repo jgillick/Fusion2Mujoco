@@ -134,11 +134,25 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
       segments needed to uniquely identify each one.
     """
 
+    refinement_input = inputs.addDropDownCommandInput(
+        "mesh_resolution",
+        "Mesh resolution",
+        adsk.core.DropDownStyles.TextListDropDownStyle,
+    )
+    for level in ("Low", "Medium", "High"):
+        refinement_input.listItems.add(level, level == settings["mesh_resolution"])
+    refinement_input.tooltip = "Mesh resolution used when exporting visual STL files"
+    refinement_input.tooltipDescription = """
+        Low  — fastest export, coarser geometry (default).
+        Medium — balanced quality and speed.
+        High — finest geometry, longest export time.
+    """
+
     convexify_input = inputs.addBoolValueInput(
         "should_convexify", "Collision meshes", True, "", settings["should_convexify"]
     )
     convexify_input.tooltip = """
-        Uses <a href='https://github.com/SarahWeiii/CoACD'>CoACD</a> to create collision meshes for the visual body meshes
+        Uses CoACD to create collision meshes for the visual body meshes
         """
     convexify_input.tooltipDescription = """
       This will make your simulations more stable and accurate, but takes a lot longer to create.
@@ -161,6 +175,8 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     convex_threshold.tooltip = "The threshold for the CoACD algorithm"
     convex_threshold.tooltipDescription = """
       A lower number means more detailed collision meshes, but takes longer to create.
+
+      More information: https://github.com/SarahWeiii/CoACD
     """
 
     futil.add_handler(
@@ -187,6 +203,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
     with_environment: bool = inputs.itemById("with_environment").value
     with_colors: bool = inputs.itemById("with_colors").value
     use_short_names: bool = inputs.itemById("use_short_names").value
+    mesh_resolution: str = inputs.itemById("mesh_resolution").selectedItem.name
 
     should_convexify: bool = inputs.itemById("should_convexify").value
     convex_threshold: float | None = None
@@ -199,6 +216,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
             "with_environment": with_environment,
             "with_colors": with_colors,
             "use_short_names": use_short_names,
+            "mesh_resolution": mesh_resolution,
             "should_convexify": should_convexify,
             "convex_threshold": inputs.itemById("convex_threshold").value,
         }
@@ -207,6 +225,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
     exporter = Exporter(
         name=model_name,
         use_short_names=use_short_names,
+        mesh_resolution=mesh_resolution,
         convex_threshold=convex_threshold,
         with_environment=with_environment,
         with_colors=with_colors,

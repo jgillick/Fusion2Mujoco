@@ -3,12 +3,18 @@ import os
 from typing import Literal
 import coacd
 import trimesh
-import adsk, adsk.core, adsk.fusion, traceback
+import adsk, adsk.fusion
 from dataclasses import dataclass
 from os import path
 
 VISUAL_BASE_NAME = "visual"
 COLLISION_BASE_NAME = "collision"
+
+RESOLUTION_MAP = {
+    "Low": adsk.fusion.MeshRefinementSettings.MeshRefinementLow,
+    "Medium": adsk.fusion.MeshRefinementSettings.MeshRefinementMedium,
+    "High": adsk.fusion.MeshRefinementSettings.MeshRefinementHigh,
+}
 
 
 @dataclass
@@ -79,6 +85,7 @@ class MeshCollection:
         self,
         mesh_root: str,
         export_manager: adsk.fusion.ExportManager,
+        mesh_resolution: str = "Low",
     ):
         """
         Export the visual mesh for a component to file.
@@ -101,7 +108,10 @@ class MeshCollection:
             opts = export_manager.createSTLExportOptions(entity, out_path)
             opts.sendToPrintUtility = False
             opts.isBinaryFormat = True
-            opts.meshRefinement = adsk.fusion.MeshRefinementSettings.MeshRefinementLow
+            opts.meshRefinement = RESOLUTION_MAP.get(
+                mesh_resolution,
+                adsk.fusion.MeshRefinementSettings.MeshRefinementLow,
+            )
             export_manager.execute(opts)
 
         if len(self.visible_bodies) == 1:

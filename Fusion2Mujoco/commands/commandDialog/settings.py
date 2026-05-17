@@ -10,6 +10,7 @@ SETTINGS_FILE = os.path.join(
 
 DEFAULT_SETTINGS = {
     "use_short_names": True,
+    "mesh_resolution": "Low",
     "should_convexify": False,
     "convex_threshold": 0.2,
     "with_environment": True,
