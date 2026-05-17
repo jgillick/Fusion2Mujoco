@@ -1,6 +1,6 @@
 # Fusion2Mujoco
 
-A Fusion 360 add-in that exports your assembly to a [MuJoCo](https://mujoco.org/) MJCF XML file, complete with meshes, joints, inertial properties, and optional collision geometry.
+A Fusion 360 add-in that exports your assembly to a [MuJoCo](https://mujoco.org/) MJCF XML model file, complete with joints, appearance colors, and optional collision geometry.
 
 ## Installation
 
