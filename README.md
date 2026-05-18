@@ -15,6 +15,7 @@ Fusion2Mujoco is not yet available in the Fusion 360 Add-In store, so it must be
    <br /><img src="docs/images/install/add.png" height="100" alt="" />
 
 4. Browse to the root repo folder (the one containing `Fusion2Mujoco.py`) and click **Open**.
+   <br /><img src="docs/images/install/dir-selection.png" height="200" alt="" />
 
 5. The add-in will appear in the list. Toggle the "Run on Startup" checkbox, and the "Run" switch.
    <br /><img src="docs/images/install/list.png" height="50" alt="" />
