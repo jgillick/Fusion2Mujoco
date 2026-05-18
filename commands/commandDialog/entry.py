@@ -4,7 +4,7 @@ import os
 import re
 from ...lib import fusionAddInUtils as futil
 from ... import config
-from ...core.exporter import Exporter
+from ...fusion2mujoco.exporter import Exporter
 from .settings import load_settings, save_settings
 
 _INVALID_FILENAME_CHARS = re.compile(r'[\\/:*?"<>|]')

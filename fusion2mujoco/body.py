@@ -1,6 +1,4 @@
 from __future__ import annotations
-from dataclasses import dataclass
-import os
 from typing import TYPE_CHECKING
 import adsk, adsk.fusion, adsk.core
 

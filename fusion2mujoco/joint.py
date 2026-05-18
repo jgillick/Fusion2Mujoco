@@ -4,8 +4,7 @@ Get information about joints from the Fusion 360 API.
 """
 
 from typing import Union
-import adsk, adsk.fusion, adsk.core
-from . import utils
+import adsk, adsk.fusion
 from . import math_operation as math_op
 
 # Maps Fusion joint types to MuJoCo joint types

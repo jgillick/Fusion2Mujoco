@@ -7,6 +7,8 @@ from .body_collection import MjcfBodyCollection
 from .mjcf_builder import MjcfBuilder
 
 MESH_DIR_NAME = "meshes"
+ATTR_GROUP = "Fusion2Mujoco"
+ATTR_EXPORT_DIR = "export_destination_dir"
 
 
 class ExportCancelledException(Exception):
@@ -81,11 +83,7 @@ class Exporter:
         self.ui = app.userInterface
         self.design = adsk.fusion.Design.cast(app.activeProduct)
         self.rootComp = self.design.rootComponent
-
-        # open a text palette for debugging
         self.textPalette = self.ui.palettes.itemById("TextCommands")
-        if not self.textPalette.isVisible:
-            self.textPalette.isVisible = True
 
         self.progress = self.ui.createProgressDialog()
         self.progress.cancelButtonText = "Cancel"
@@ -136,6 +134,12 @@ class Exporter:
 
         folder_dialog = self.ui.createFolderDialog()
         folder_dialog.title = "Choose the folder to save to"
+
+        # Default to the last directory the user selected
+        saved_dir_attr = self.design.attributes.itemByName(ATTR_GROUP, ATTR_EXPORT_DIR)
+        if saved_dir_attr and path.isdir(saved_dir_attr.value):
+            folder_dialog.initialDirectory = saved_dir_attr.value
+
         dialog_result = folder_dialog.showDialog()
 
         selected_dir = ""
@@ -150,6 +154,9 @@ class Exporter:
         self.mesh_root = path.join(self.destination, MESH_DIR_NAME)
         if not path.exists(self.mesh_root):
             os.makedirs(self.mesh_root)
+
+        # Save the selected directory for next time
+        self.design.attributes.add(ATTR_GROUP, ATTR_EXPORT_DIR, selected_dir)
 
         return self.destination
 
