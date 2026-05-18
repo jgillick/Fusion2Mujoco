@@ -9,15 +9,15 @@ Fusion2Mujoco is not yet available in the Fusion 360 Add-In store, so it must be
 1. **Download the add-in.** Clone this repository or download and extract the zip.
 
 2. **Open Fusion 360** and go to **Utilities → Add-Ins** (or press `Shift+S`).
-   <br /><img src="images/install/add-ins-location.png" height="100" alt="" />
+   <br /><img src="docs/images/install/add-ins-location.png" height="100" alt="" />
 
 3. Click the **+** button and **Script or add-in from device**.
-   <br /><img src="images/install/add.png" height="100" alt="" />
+   <br /><img src="docs/images/install/add.png" height="100" alt="" />
 
 4. Browse to `Fusion2Mujoco` repo folder and click **Open**.
 
 5. The add-in will appear in the list. Toggle the "Run on Startup" checkbox, and the "Run" switch.
-   <br /><img src="images/install/list.png" height="50" alt="" />
+   <br /><img src="docs/images/install/list.png" height="50" alt="" />
 
 6. Optionally check **Run on Startup** so the add-in loads automatically every time Fusion 360 opens.
 
@@ -28,7 +28,7 @@ Once loaded, an **Export to Mujoco** button appears in the **Utilities** panel o
 1. Open the Fusion 360 assembly you want to export. The model should use standard joints (not as-built joints) to define the kinematic structure.
 
 2. Goto the **Utilities** tab and click the **Export to Mujoco** button in the toolbar
-   <br /><img src="images/toolbar.png" height="100" alt="" />
+   <br /><img src="docs/images/toolbar.png" height="100" alt="" />
 
 3. Configure the export options in the dialog (see [Export Options](#export-options) below), then click **OK**.
 
@@ -40,7 +40,7 @@ Once loaded, an **Export to Mujoco** button appears in the **Utilities** panel o
 
 ## Export Options
 
-<img src="images/options.png" height="200" alt="" />
+<img src="docs/images/options.png" height="200" alt="" />
 
 | Option                   | Description                                                                                                                                                                                                                                                                                                                                                    |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
