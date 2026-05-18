@@ -8,13 +8,16 @@ Fusion2Mujoco is not yet available in the Fusion 360 Add-In store, so it must be
 
 1. **Download the add-in.** Clone this repository or download and extract the zip.
 
-2. **Open Fusion 360** and go to **Tools → Scripts and Add-Ins** (or press `Shift+S`).
+2. **Open Fusion 360** and go to **Utilities → Add-Ins** (or press `Shift+S`).
+   <br /><img src="images/install/add-ins-location.png" height="100" alt="" />
 
-3. **Navigate to the Add-Ins tab** and click the green **+** button next to "My Add-Ins".
+3. Click the **+** button and **Script or add-in from device**.
+   <br /><img src="images/install/add.png" height="100" alt="" />
 
-4. **Select the add-in folder.** Browse to the `Fusion2Mujoco` subfolder inside this repository (the folder that contains `Fusion2Mujoco.py`) and click **Open**.
+4. Browse to `Fusion2Mujoco` repo folder and click **Open**.
 
-5. The add-in will appear in the "My Add-Ins" list. Select it and click **Run**.
+5. The add-in will appear in the list. Toggle the "Run on Startup" checkbox, and the "Run" switch.
+   <br /><img src="images/install/list.png" height="50" alt="" />
 
 6. Optionally check **Run on Startup** so the add-in loads automatically every time Fusion 360 opens.
 
@@ -24,17 +27,20 @@ Once loaded, an **Export to Mujoco** button appears in the **Utilities** panel o
 
 1. Open the Fusion 360 assembly you want to export. The model should use standard joints (not as-built joints) to define the kinematic structure.
 
-2. Click the **Export to Mujoco** button in the toolbar, or go to **Tools → Scripts and Add-Ins → Export to Mujoco**.
+2. Goto the **Utilities** tab and click the **Export to Mujoco** button in the toolbar
+   <br /><img src="images/toolbar.png" height="100" alt="" />
 
 3. Configure the export options in the dialog (see [Export Options](#export-options) below), then click **OK**.
 
-4. A folder picker will appear. Choose the parent directory where the output folder should be created.
+4. Choose where you want th export files to be saved
 
 5. A progress dialog tracks the export. You can cancel at any time. The Text Commands panel will display detailed log output.
 
-6. When the export completes, the output is written to `<destination>/<model name>/` (see [Output Structure](#output-structure)).
+6. When the export completes, the output is written to `<destination>/<model name>/`
 
 ## Export Options
+
+<img src="images/options.png" height="200" alt="" />
 
 | Option                   | Description                                                                                                                                                                                                                                                                                                                                                    |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
