@@ -1,13 +1,23 @@
 import adsk.core
 import adsk.fusion
 import os
+import platform
 import re
+import sys
 from ...lib import fusionAddInUtils as futil
 from ... import config
 from ...fusion2mujoco.exporter import Exporter
 from .settings import load_settings, save_settings
 
 _INVALID_FILENAME_CHARS = re.compile(r'[\\/:*?"<>|]')
+
+
+def _is_windows_arm() -> bool:
+    """True when Fusion is running as native Windows on ARM (CoACD has no win_arm64 wheel)."""
+    return sys.platform == "win32" and platform.machine().lower() in (
+        "arm64",
+        "aarch64",
+    )
 
 
 def _sanitize_filename(name: str) -> str:
@@ -148,36 +158,41 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
         High — finest geometry, longest export time.
     """
 
-    convexify_input = inputs.addBoolValueInput(
-        "should_convexify", "Collision meshes", True, "", settings["should_convexify"]
-    )
-    convexify_input.tooltip = """
-        Uses CoACD to create collision meshes for the visual body meshes
+    if not _is_windows_arm():
+        convexify_input = inputs.addBoolValueInput(
+            "should_convexify",
+            "Collision meshes",
+            True,
+            "",
+            settings["should_convexify"],
+        )
+        convexify_input.tooltip = """
+            Uses CoACD to create collision meshes for the visual body meshes
+            """
+        convexify_input.tooltipDescription = """
+          This will make your simulations more stable and accurate, but takes a lot longer to create.
+
+          Depending on how low you set the threshold, each body can take several minutes to export.
+
+          https://github.com/SarahWeiii/CoACD
         """
-    convexify_input.tooltipDescription = """
-      This will make your simulations more stable and accurate, but takes a lot longer to create.
 
-      Depending on how low you set the threshold, each body can take several minutes to export.
+        convex_threshold = inputs.addFloatSpinnerCommandInput(
+            "convex_threshold",
+            "Concavity threshold",
+            "",
+            0.01,
+            1.0,
+            0.05,
+            settings["convex_threshold"],
+        )
+        convex_threshold.isEnabled = settings["should_convexify"]
+        convex_threshold.tooltip = "The threshold for the CoACD algorithm"
+        convex_threshold.tooltipDescription = """
+          A lower number means more detailed collision meshes, but takes longer to create.
 
-      https://github.com/SarahWeiii/CoACD
-    """
-
-    convex_threshold = inputs.addFloatSpinnerCommandInput(
-        "convex_threshold",
-        "Concavity threshold",
-        "",
-        0.01,
-        1.0,
-        0.05,
-        settings["convex_threshold"],
-    )
-    convex_threshold.isEnabled = settings["should_convexify"]
-    convex_threshold.tooltip = "The threshold for the CoACD algorithm"
-    convex_threshold.tooltipDescription = """
-      A lower number means more detailed collision meshes, but takes longer to create.
-
-      More information: https://github.com/SarahWeiii/CoACD
-    """
+          More information: https://github.com/SarahWeiii/CoACD
+        """
 
     futil.add_handler(
         args.command.execute, command_execute, local_handlers=local_handlers
@@ -205,10 +220,14 @@ def command_execute(args: adsk.core.CommandEventArgs):
     use_short_names: bool = inputs.itemById("use_short_names").value
     mesh_resolution: str = inputs.itemById("mesh_resolution").selectedItem.name
 
-    should_convexify: bool = inputs.itemById("should_convexify").value
+    should_convexify = False
     convex_threshold: float | None = None
-    if should_convexify:
-        convex_threshold = inputs.itemById("convex_threshold").value
+    saved_convex_threshold = load_settings()["convex_threshold"]
+    if not _is_windows_arm():
+        should_convexify = inputs.itemById("should_convexify").value
+        if should_convexify:
+            convex_threshold = inputs.itemById("convex_threshold").value
+        saved_convex_threshold = inputs.itemById("convex_threshold").value
 
     save_model_export_name(model_name)
     save_settings(
@@ -218,7 +237,7 @@ def command_execute(args: adsk.core.CommandEventArgs):
             "use_short_names": use_short_names,
             "mesh_resolution": mesh_resolution,
             "should_convexify": should_convexify,
-            "convex_threshold": inputs.itemById("convex_threshold").value,
+            "convex_threshold": saved_convex_threshold,
         }
     )
 
@@ -245,7 +264,7 @@ def command_input_changed(args: adsk.core.InputChangedEventArgs):
             changed_input.value = cleaned
 
     # Enable/disable the concavity threshold input based on the should_convexify input
-    if changed_input.id == "should_convexify":
+    if changed_input.id == "should_convexify" and not _is_windows_arm():
         should_convexify = inputs.itemById("should_convexify").value
         convex_threshold: adsk.core.FloatSpinnerCommandInput = inputs.itemById(
             "convex_threshold"

@@ -1,4 +1,3 @@
-import coacd
 import adsk, adsk.core, adsk.fusion, traceback
 import os
 from os import path
@@ -187,7 +186,6 @@ class Exporter:
         self.log(f"Exporting meshes to {self.mesh_root}")
         export_manager = self.design.exportManager
         exported: dict[str, MeshCollection] = {}
-        coacd.set_log_level("error")
         for body in self.mjcf_bodies:
             # If this mesh has already been exported, reuse the cached instance.
             if body.mesh.base_name in exported:

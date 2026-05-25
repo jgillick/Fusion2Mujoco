@@ -324,8 +324,6 @@ class ColorVisuals(Visuals):
                 self._cache.verify()
                 # return the stored copy of the colors
                 return self._data[key_colors]
-            # hashes match: colors are unmodified, return the cached object directly
-            return colors
         else:
             # colors have never been accessed
             if self.kind is None:

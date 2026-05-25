@@ -102,7 +102,7 @@ def plane_fit(points):
         # points offset by the plane origin
         x = points - C[:, None, :]
         # create a (p, 3, 3) matrix
-        M = x.swapaxes(1, 2) @ x
+        M = np.einsum("pnd, pnm->pdm", x, x)
     # run SVD
     N = np.linalg.svd(M)[0][..., -1]
     # return the centroid(s) and normal(s)

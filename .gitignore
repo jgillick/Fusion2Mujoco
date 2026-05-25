@@ -220,4 +220,13 @@ __marimo__/
 # Fusion2Mujoco add-in user settings
 settings.json
 
+# Vendor: commit wheel archives, gitignore extracted runtime dirs
+!vendor/wheels/
+!vendor/wheels/**
+vendor/none/
+vendor/win_amd64/
+vendor/macosx_arm64/
+vendor/.extracted
+fusion2mujoco/vendor/
+
 .DS_Store

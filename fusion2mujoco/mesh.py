@@ -1,7 +1,6 @@
 from ctypes import Union
 import os
 from typing import Literal
-import coacd
 import trimesh
 import adsk, adsk.fusion
 from dataclasses import dataclass
@@ -140,12 +139,16 @@ class MeshCollection:
             mesh_root: The root directory all meshes are exported to
             convex_threshold: The concavity threshold for the CoACD algorithm
         """
+        # CoACD isn't supported on Windows on ARM.
+        # The collision options are hidden for this platform, so we should
+        # never get here on that platform.
+        import coacd
 
         # Load the visual mesh
         visual_path = path.join(mesh_root, self.visual.file)
         visual_mesh = trimesh.load(path.abspath(visual_path), force="mesh")
 
-        # Run the CoACD algorithm
+        coacd.set_log_level("error")
         coacd_mesh = coacd.Mesh(visual_mesh.vertices, visual_mesh.faces)
         parts = coacd.run_coacd(
             coacd_mesh,

@@ -8,7 +8,6 @@ Query mesh curvature.
 import numpy as np
 
 from . import util
-from .util import diagonal_dot
 
 try:
     from scipy.sparse import coo_matrix
@@ -154,9 +153,9 @@ def line_ball_intersection(start_points, end_points, center, radius):
     L = end_points - start_points
     oc = start_points - center  # o-c
     r = radius
-    ldotl = diagonal_dot(L, L)
-    ldotoc = diagonal_dot(L, oc)
-    ocdotoc = diagonal_dot(oc, oc)
+    ldotl = np.einsum("ij, ij->i", L, L)  # l.l
+    ldotoc = np.einsum("ij, ij->i", L, oc)  # l.(o-c)
+    ocdotoc = np.einsum("ij, ij->i", oc, oc)  # (o-c).(o-c)
     discrims = ldotoc**2 - ldotl * (ocdotoc - r**2)
 
     # If discriminant is non-positive, then we have zero length

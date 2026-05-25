@@ -12,7 +12,6 @@ from .constants import log_time, tol
 from .grouping import group_min
 from .triangles import closest_point as _corresponding
 from .triangles import points_to_barycentric
-from .util import diagonal_dot
 
 try:
     from scipy.spatial import cKDTree
@@ -255,7 +254,7 @@ def signed_distance(mesh, points):
         points[nonzero]
         - (
             normals[nonzero].T
-            * diagonal_dot(points[nonzero] - closest[nonzero], normals[nonzero])
+            * np.einsum("ij,ij->i", points[nonzero] - closest[nonzero], normals[nonzero])
         ).T
     )
 
@@ -268,7 +267,8 @@ def signed_distance(mesh, points):
     # Where projection does lie in the triangle, compare vector to projection to the
     # triangle normal to compute sign
     sign = np.sign(
-        diagonal_dot(
+        np.einsum(
+            "ij,ij->i",
             normals[nonzero[ontriangle]],
             points[nonzero[ontriangle]] - projection[ontriangle],
         )
@@ -520,8 +520,9 @@ def max_tangent_sphere(
         # at the point and the nearest point.
         diff = n_points[~done] - points[not_converged]
         old_radii = radii[not_converged].copy()
-        radii[not_converged] = diagonal_dot(diff, diff) / (
-            2 * diagonal_dot(diff, normals[not_converged])
+        # np.einsum produces element wise dot product
+        radii[not_converged] = np.einsum("ij, ij->i", diff, diff) / (
+            2 * np.einsum("ij, ij->i", diff, normals[not_converged])
         )
         centers[not_converged] = points[not_converged] + normals[not_converged] * radii[
             not_converged

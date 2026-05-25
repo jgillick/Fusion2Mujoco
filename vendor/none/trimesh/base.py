@@ -35,7 +35,6 @@ from . import (
     triangles,
     units,
     util,
-    visual,
 )
 from .caching import Cache, DataStore, TrackedArray, cache_decorator
 from .constants import log, tol
@@ -296,19 +295,20 @@ class Trimesh(Geometry3D):
         if self.is_empty:
             return self
 
-        # if we're cleaning remove duplicate and degenerate faces. this
-        # mutates face count so it must run OUTSIDE the cache lock — locking
-        # across a face-count change leaves derived caches (face_adjacency,
-        # edges, ...) stale, which fix_normals would then read and blow up on.
-        if validate:
-            # get a mask with only unique and non-degenerate faces
-            mask = self.unique_faces() & self.nondegenerate_faces()
-            self.update_faces(mask)
-            self.fix_normals()
-
-        # the remaining ops do not change face/vertex count so we can hold
-        # the cache lock to preserve face_normals/vertex_normals across them
+        # avoid clearing the cache during operations
         with self._cache:
+            # if we're cleaning remove duplicate
+            # and degenerate faces
+            if validate:
+                # get a mask with only unique and non-degenerate faces
+                mask = self.unique_faces() & self.nondegenerate_faces()
+                self.update_faces(mask)
+                self.fix_normals()
+
+            # since none of our process operations moved vertices or faces
+            # we can keep face and vertex normals in the cache without recomputing
+            # if faces or vertices have been removed, normals are validated before
+            # being returned so there is no danger of inconsistent dimensions
             self.remove_infinite_values()
             self.merge_vertices(merge_tex=merge_tex, merge_norm=merge_norm)
             self._cache.clear(exclude={"face_normals", "vertex_normals"})
@@ -1312,79 +1312,6 @@ class Trimesh(Geometry3D):
         if util.is_shape(cached_normals, (-1, 3)):
             self.face_normals = cached_normals[mask]
 
-    def extend_faces(self, new_faces: ArrayLike):
-        """
-        Extend `mesh.faces` in-place with new triangles.
-
-        This does substantial bookkeeping: padding face colors
-        and face attributes with default values, and preserving cached
-        face normals to avoid recomputing every normal.
-
-        Parameters
-        ------------
-        new_faces : (n, 3) integer
-          The new faces as indexes of `self.vertices`
-        """
-        new_faces = np.asanyarray(new_faces, dtype=np.int64)
-        if len(new_faces.shape) != 2 or new_faces.shape[1] != 3:
-            raise ValueError(f"Faces must be triangular, not `{new_faces.shape}`!")
-
-        if len(new_faces) == 0:
-            return
-
-        # make sure the cache is up-to-date
-        self._cache.verify()
-
-        # if we manage to extend colors and normals
-        extend_normals, extend_colors = None, None
-
-        # always filter degenerate triangles
-        new_normals, valid = triangles.normals(self.vertices[new_faces])
-        new_faces = new_faces[valid]
-        if len(new_faces) == 0:
-            return
-
-        # save cached normals if available to avoid a full recompute
-        if "face_normals" in self._cache.cache:
-            cached_normals = self._cache.cache["face_normals"]
-            if len(cached_normals) > 0:
-                extend_normals = util.vstack_empty((cached_normals, new_normals))
-
-        if self.visual.defined and self.visual.kind == "face":
-            extend_colors = util.vstack_empty(
-                (
-                    self.visual.face_colors,
-                    np.tile(visual.DEFAULT_COLOR, (len(new_faces), 1)),
-                )
-            )
-
-        ##########
-        # DO ALL MUTATION AT THE END HERE
-        # apply the new faces
-        original_length = len(self._data["faces"])
-        self.faces = util.vstack_empty((self._data["faces"], new_faces))
-        # dump the cache to set the new hash to the stacked faces
-        self._cache.verify()
-        # save us a normals recompute if we can
-        if extend_normals is not None:
-            self._cache["face_normals"] = extend_normals
-        if extend_colors is not None:
-            self.visual.face_colors = extend_colors
-
-        # collect new, padded face attributes
-        new_attribs = {}
-        for name, attrib in self.face_attributes.items():
-            shape = np.shape(attrib)
-            if len(shape) == 0 or shape[0] != original_length:
-                continue
-            # pad integers with -1 and everything else with zeros
-            fill = -1 if attrib.dtype.kind == "i" else 0
-            pad_shape = (len(new_faces),) + shape[1:]
-            pad = np.full(pad_shape, fill, dtype=attrib.dtype)
-            new_attribs[name] = np.concatenate((attrib, pad))
-        # update outside the loop with new values
-        self.face_attributes.update(new_attribs)
-
     def remove_infinite_values(self) -> None:
         """
         Ensure that every vertex and face consists of finite numbers.
@@ -2152,7 +2079,7 @@ class Trimesh(Geometry3D):
         return result
 
     def subdivide_to_size(
-        self, max_edge: Number, max_iter: Integer = 10, return_index: bool = False
+        self, max_edge: Floating, max_iter: Integer = 10, return_index: bool = False
     ) -> Union["Trimesh", Tuple["Trimesh", NDArray[int64]]]:
         """
         Subdivide a mesh until every edge is shorter than a
@@ -2162,7 +2089,7 @@ class Trimesh(Geometry3D):
 
         Parameters
         ------------
-        max_edge
+        max_edge : float
             Maximum length of any edge in the result
         max_iter : int
             The maximum number of times to run subdivision

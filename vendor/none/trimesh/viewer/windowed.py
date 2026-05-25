@@ -707,7 +707,7 @@ class SceneViewer(pyglet.window.Window):
         elif symbol == pyglet.window.key.F:
             self.toggle_fullscreen()
         elif symbol == pyglet.window.key.H:
-            print(_HELP_MESSAGE)  # noqa: T201
+            print(_HELP_MESSAGE)
 
         if symbol in [
             pyglet.window.key.LEFT,

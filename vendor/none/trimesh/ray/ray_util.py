@@ -1,13 +1,10 @@
 import numpy as np
 
 from .. import bounds, constants, util
-from ..typed import ArrayLike, Optional
 
 
 @constants.log_time
-def contains_points(
-    intersector, points: ArrayLike, check_direction: Optional[bool] = None
-):
+def contains_points(intersector, points, check_direction=None):
     """
     Check if a mesh contains a set of points, using ray tests.
 
@@ -54,11 +51,9 @@ def contains_points(
         )
 
     # cast a ray both forwards and backwards
-    # need multiple_hits=True so the parity test counts cavity walls
     _location, index_ray, _c = intersector.intersects_location(
         np.vstack((points[inside_aabb], points[inside_aabb])),
         np.vstack((ray_directions, -ray_directions)),
-        multiple_hits=True,
     )
 
     # if we hit nothing in either direction just return with no hits

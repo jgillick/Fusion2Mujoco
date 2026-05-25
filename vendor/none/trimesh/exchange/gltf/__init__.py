@@ -963,10 +963,9 @@ def _append_mesh(
         # GLTF has no floating point type larger than 32 bits so clip
         # any float64 or larger to float32
         if attrib.dtype.kind == "f" and attrib.dtype.itemsize > 4:
-            data = attrib.astype(float32)
+            data = attrib.astype(np.float32)
         else:
-            # force little-endian to match GLTF binary format
-            data = attrib.astype(attrib.dtype.newbyteorder("<"), copy=False)
+            data = attrib
 
         if len(data.shape) == 1:
             data = data[:, np.newaxis]
@@ -1207,10 +1206,9 @@ def _append_path(path, name, tree, buffer_items):
         # GLTF has no floating point type larger than 32 bits so clip
         # any float64 or larger to float32
         if attrib.dtype.kind == "f" and attrib.dtype.itemsize > 4:
-            data = attrib.astype(float32)
+            data = attrib.astype(np.float32)
         else:
-            # force little-endian to match GLTF binary format
-            data = attrib.astype(attrib.dtype.newbyteorder("<"), copy=False)
+            data = attrib
 
         if not all(util.is_instance_named(e, "Line") for e in path.entities):
             log.warning(
