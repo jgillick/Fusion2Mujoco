@@ -33,8 +33,7 @@ class MjcfBuilder:
         self.root_el: ET.Element = None
         self.compiler_el: ET.Element = None
         self.assets_el: ET.Element = None
-        self.worldbody_el: ET.Element = None
-        self.rootbody_el: ET.Element = None
+        self.world_body_el: ET.Element = None
 
         self.built_materials: dict[str, str] = {}
         self.has_collision_meshes = exporter.convexify
@@ -57,14 +56,13 @@ class MjcfBuilder:
         self.build_worldbody()
         self.build_environment()
 
-    def save(self):
+    def save(self, file_path: str):
         """
         Save the MJCF file
         """
         # Format
         tree = ET.ElementTree(self.root_el)
         ET.indent(tree, space="    ", level=0)
-        file_path = path.join(self.exporter.destination, f"{self.exporter.name}.xml")
 
         self.exporter.update_progress(f"Saving to {file_path}...")
         with open(file_path, "wb") as handle:
@@ -145,18 +143,22 @@ class MjcfBuilder:
         """
         Build the worldbody block
         """
-        self.worldbody_el = ET.SubElement(self.root_el, "worldbody")
+        self.world_body_el = ET.SubElement(self.root_el, "worldbody")
+        root_body_el = self.world_body_el
 
-        pos = "0.0 0.0 0.0"
+        # Add offset from the ground plane
         if self.with_environment:
-            z_offset = self.compute_ground_offset()
-            pos = f"0.0 0.0 {z_offset:.6g}"
+            pos = "0.0 0.0 0.0"
+            if self.with_environment:
+                z_offset = self.compute_ground_offset()
+                pos = f"0.0 0.0 {z_offset:.6g}"
 
-        root_body_el = ET.SubElement(
-            self.worldbody_el,
-            "body",
-            {"name": "model_root", "pos": pos, "quat": "1 0 0 0"},
-        )
+            root_body_el = ET.SubElement(
+                self.world_body_el,
+                "body",
+                {"pos": pos, "quat": "1 0 0 0"},
+            )
+            ET.SubElement(root_body_el, "freejoint")
 
         # Add all the top-level bodies/occurrences
         for body in self.root_bodies:
@@ -191,6 +193,10 @@ class MjcfBuilder:
             "pos": "{} {} {}".format(x, y, z),
             "quat": "{} {} {} {}".format(qw, qx, qy, qz),
         }
+
+        # Add free joint if this element is a child of the worldbody
+        if parent_el.tag == "worldbody":
+            ET.SubElement(body_el, "freejoint")
 
         # Add parent joint if it exists
         parent_joint = body.get_parent_joint()
@@ -361,8 +367,8 @@ class MjcfBuilder:
                 "dir": "0 0 -1",
             },
         )
-        self.worldbody_el.insert(0, light_el)
-        self.worldbody_el.insert(1, ground_plane_geom_el)
+        self.world_body_el.insert(0, light_el)
+        self.world_body_el.insert(1, ground_plane_geom_el)
 
     def parse_joint_relationships(self):
         """
