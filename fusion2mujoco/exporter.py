@@ -29,20 +29,25 @@ class Exporter:
         with_environment: bool = True,
         with_colors: bool = True,
     ):
-        self.name = name
-        self.design = None
-        self.rootComp = None
+        # Options
         self.short_body_names: bool = use_short_names
         self.mesh_resolution: str = mesh_resolution
         self.convexify: bool = convex_threshold is not None
         self.convex_threshold: float | None = convex_threshold
         self.with_environment: bool = with_environment
         self.with_colors: bool = with_colors
+
+        # State
+        self.name = name
+        self.design = None
+        self.rootComp = None
         self.destination: str = None
         self.mesh_root: str = None
+        self.xml_file_name: str = f"{name}.xml"
+        self.xml_file_path: str = None
         self.mjcf_bodies: MjcfBodyCollection = MjcfBodyCollection()
         self.progress: adsk.core.ProgressDialog = None
-        self._progress_step = 0
+        self.progress_step = 0
 
     def message_box(self, message: str, title: str = "Fusion2Mujoco"):
         """
@@ -58,6 +63,25 @@ class Exporter:
         if self.textPalette:
             self.textPalette.writeText(message)
 
+    def start_progress(self):
+        """
+        Start the progress dialog
+        """
+        # Calculate the total number of progress steps
+        builder_steps = 2
+        export_meshes = set(body.mesh.base_name for body in self.mjcf_bodies)
+        mesh_export_count = len(export_meshes)
+        if self.convexify:
+            mesh_export_count *= 2
+        maximumValue = builder_steps + mesh_export_count
+
+        self.progress = self.ui.createProgressDialog()
+        self.progress.cancelButtonText = "Cancel"
+        self.progress.isBackgroundTranslucent = False
+        self.progress.show(
+            "Fusion2Mujoco Export", "Making magic...", 0, maximumValue, 0
+        )
+
     def update_progress(self, message: str):
         """
         Advance the step counter, update the progress dialog message, and pump the
@@ -68,8 +92,8 @@ class Exporter:
             return
         if self.progress.wasCancelled:
             raise ExportCancelledException()
-        self._progress_step += 1
-        self.progress.progressValue = self._progress_step
+        self.progress_step += 1
+        self.progress.progressValue = self.progress_step
         self.progress.message = message
         adsk.doEvents()
         if self.progress.wasCancelled:
@@ -85,27 +109,14 @@ class Exporter:
         self.rootComp = self.design.rootComponent
         self.textPalette = self.ui.palettes.itemById("TextCommands")
 
-        self.progress = self.ui.createProgressDialog()
-        self.progress.cancelButtonText = "Cancel"
-        self.progress.isBackgroundTranslucent = False
-        self.progress.show("Fusion2Mujoco Export", "Initializing...", 0, 100, 0)
-
         try:
             self.root = self.design.rootComponent
             self.choose_destination()
 
-            self.update_progress("Collecting links...")
             self.mjcf_bodies = MjcfBodyCollection.collect(
                 self, use_short_names=self.short_body_names
             )
-
-            # Now that we know how many unique meshes there are, set the total step count.
-            # Steps: 2 (joints + links) + 2 per unique mesh (export STL + convexify)
-            unique_meshes = set(body.mesh.base_name for body in self.mjcf_bodies)
-            mesh_operations = len(unique_meshes)
-            if self.convexify:
-                mesh_operations *= 2
-            self.progress.maximumValue = 3 + mesh_operations
+            self.start_progress()
 
             # Export each link's mesh body
             self.export_meshes()
@@ -117,12 +128,12 @@ class Exporter:
                 with_colors=self.with_colors,
             )
             mjcfBuilder.build()
-            mjcfBuilder.save()
+            mjcfBuilder.save(self.xml_file_path)
 
         except ExportCancelledException:
             self.log("Export cancelled by user.")
         except:
-            self.message_box("Failed:\n{}".format(traceback.format_exc()))
+            self.message_box("Mujoco export failed:\n{}".format(traceback.format_exc()))
         finally:
             if self.progress:
                 self.progress.hide()
@@ -142,21 +153,30 @@ class Exporter:
 
         dialog_result = folder_dialog.showDialog()
 
-        selected_dir = ""
+        self.destination = ""
         if dialog_result == adsk.core.DialogResults.DialogOK:
-            selected_dir = folder_dialog.folder
+            self.destination = folder_dialog.folder
         else:
             raise ExportCancelledException()
 
-        self.destination = path.join(selected_dir, self.name)
-        os.makedirs(self.destination, exist_ok=True)
+        # If the target file already exists, ask the user if we should overwrite it
+        self.xml_file_path = path.join(self.destination, self.xml_file_name)
+        if path.isfile(self.xml_file_path):
+            confirm = self.ui.messageBox(
+                f'"{self.xml_file_name}" already exists in the selected folder.\n\nOverwrite it?',
+                "Fusion2Mujoco",
+                adsk.core.MessageBoxButtonTypes.YesNoButtonType,
+                adsk.core.MessageBoxIconTypes.QuestionIconType,
+            )
+            if confirm != adsk.core.DialogResults.DialogYes:
+                raise ExportCancelledException()
 
         self.mesh_root = path.join(self.destination, MESH_DIR_NAME)
         if not path.exists(self.mesh_root):
             os.makedirs(self.mesh_root)
 
         # Save the selected directory for next time
-        self.design.attributes.add(ATTR_GROUP, ATTR_EXPORT_DIR, selected_dir)
+        self.design.attributes.add(ATTR_GROUP, ATTR_EXPORT_DIR, self.destination)
 
         return self.destination
 

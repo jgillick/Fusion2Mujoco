@@ -102,7 +102,7 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
     name_input.tooltipDescription = "Used as the output folder name and MJCF model name. Cannot be blank or contain characters invalid in file names."
 
     env_input = inputs.addBoolValueInput(
-        "with_environment", "Ground plane/Light", True, "", settings["with_environment"]
+        "with_environment", "Ground plane", True, "", settings["with_environment"]
     )
     env_input.tooltip = (
         "Include an enviroment (ground plane, light, etc) around the exported model"

@@ -37,7 +37,7 @@ Once loaded, an **Export to Mujoco** button appears in the **Utilities** panel o
 
 5. A progress dialog tracks the export. You can cancel at any time. The Text Commands panel will display detailed log output.
 
-6. When the export completes, the output is written to `<destination>/<model name>/`
+6. When the export completes, the output is written to the selected directory.
 
 ## Export Options
 
