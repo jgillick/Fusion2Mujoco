@@ -3,6 +3,7 @@ import os
 from os import path
 from .mesh import MeshCollection
 from .body_collection import MjcfBodyCollection
+from .body import MjcfBody
 from .mjcf_builder import MjcfBuilder
 
 MESH_DIR_NAME = "meshes"
@@ -24,15 +25,20 @@ class Exporter:
         name: str = "Model",
         use_short_names: bool = False,
         mesh_resolution: str = "Low",
+        convexify: bool = False,
         convex_threshold: float | None = None,
+        component_collision_settings: dict[str, float | None] | None = None,
         with_environment: bool = True,
         with_colors: bool = True,
     ):
         # Options
         self.short_body_names: bool = use_short_names
         self.mesh_resolution: str = mesh_resolution
-        self.convexify: bool = convex_threshold is not None
+        self.convexify: bool = convex_threshold
         self.convex_threshold: float | None = convex_threshold
+        self.component_collision_settings: dict[str, float | None] | None = (
+            component_collision_settings
+        )
         self.with_environment: bool = with_environment
         self.with_colors: bool = with_colors
 
@@ -66,13 +72,19 @@ class Exporter:
         """
         Start the progress dialog
         """
-        # Calculate the total number of progress steps
+        # Count the number of steps in the progress dialog
         builder_steps = 2
         export_meshes = set(body.mesh.base_name for body in self.mjcf_bodies)
-        mesh_export_count = len(export_meshes)
+
+        visual_mesh_count = len(export_meshes)
         if self.convexify:
-            mesh_export_count *= 2
-        maximumValue = builder_steps + mesh_export_count
+            visual_mesh_count *= 2
+
+        collision_mesh_count = 0
+        if self.convexify:
+            collision_mesh_count = self.num_collision_meshes()
+
+        maximumValue = builder_steps + visual_mesh_count + collision_mesh_count
 
         self.progress = self.ui.createProgressDialog()
         self.progress.cancelButtonText = "Cancel"
@@ -203,5 +215,35 @@ class Exporter:
             )
 
             if self.convexify:
-                self.update_progress(f"Convexifying: {mesh.base_name}")
-                mesh.create_collision_mesh(self.mesh_root, self.convex_threshold)
+                # Get convex threshold for this component
+                threshold = self.convex_threshold
+                token = body.occurrence.component.entityToken
+                if self.component_collision_settings is not None:
+                    threshold = self.component_collision_settings.get(token, threshold)
+
+                if threshold:
+                    self.update_progress(f"Convexifying: {mesh.base_name}")
+                    mesh.create_collision_mesh(self.mesh_root, threshold)
+
+    def collision_threshold_for_body(self, body: MjcfBody) -> float | None:
+        if not self.convexify:
+            return None
+
+        threshold = self.convex_threshold
+        token = body.occurrence.component.entityToken
+        if self.component_collision_settings is not None:
+            threshold = self.component_collision_settings.get(token, threshold)
+        return threshold
+
+    def num_collision_meshes(self) -> int:
+        seen_tokens: set[str] = set()
+        count = 0
+        for body in self.mjcf_bodies:
+            token = body.occurrence.component.entityToken
+            if token in seen_tokens:
+                continue
+            seen_tokens.add(token)
+            threshold = self.collision_threshold_for_body(body)
+            if threshold is not None:
+                count += 1
+        return count

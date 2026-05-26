@@ -1,27 +1,17 @@
 import adsk.core
 import adsk.fusion
 import os
-import platform
-import re
-import sys
+
 from ...lib import fusionAddInUtils as futil
 from ... import config
 from ...fusion2mujoco.exporter import Exporter
-from .settings import load_settings, save_settings
-
-_INVALID_FILENAME_CHARS = re.compile(r'[\\/:*?"<>|]')
-
-
-def _is_windows_arm() -> bool:
-    """True when Fusion is running as native Windows on ARM (CoACD has no win_arm64 wheel)."""
-    return sys.platform == "win32" and platform.machine().lower() in (
-        "arm64",
-        "aarch64",
-    )
+from .general import GeneralInputs, INVALID_FILENAME_CHARS
+from .collision import CollisionInputs
+from .logger import Logger
 
 
 def _sanitize_filename(name: str) -> str:
-    return _INVALID_FILENAME_CHARS.sub("", name).strip()
+    return INVALID_FILENAME_CHARS.sub("", name).strip()
 
 
 app = adsk.core.Application.get()
@@ -30,9 +20,6 @@ ui = app.userInterface
 CMD_ID = f"{config.COMPANY_NAME}_{config.ADDIN_NAME}_cmdDialog"
 CMD_NAME = "Export to Mujoco"
 CMD_Description = "Export your model to Mujoco XML"
-
-# The model attribute to save the export name to
-ATTR_EXPORT_NAME = "model_export_name"
 
 
 # Specify that the command will be promoted to the panel.
@@ -51,7 +38,12 @@ ICON_FOLDER = os.path.join(THIS_DIR, "resources", "")
 
 # Local list of event handlers used to maintain a reference so
 # they are not released and garbage collected.
-local_handlers = []
+local_handlers: list = []
+general_inputs: GeneralInputs | None = None
+collision_inputs: CollisionInputs | None = None
+
+ID_TAB_GENERAL = "export_tab_general"
+ID_TAB_COLLISIONS = "export_tab_collisions"
 
 
 # Executed when add-in is run.
@@ -98,101 +90,26 @@ def stop():
 # Function that is called when a user clicks the corresponding button in the UI.
 # This defines the contents of the command dialog and connects to the command related events.
 def command_created(args: adsk.core.CommandCreatedEventArgs):
+    global general_inputs, collision_inputs
+    design = adsk.fusion.Design.cast(app.activeProduct)
+
     args.command.isExecutedWhenPreEmpted = False
+    args.command.setDialogSize(420, 480)
 
-    settings = load_settings()
-    default_name = load_model_export_name()
-
-    # Input commands
-    # https://help.autodesk.com/view/fusion360/ENU/?contextId=CommandInputs
+    logger = Logger()
     inputs = args.command.commandInputs
 
-    name_input = inputs.addStringValueInput("model_name", "Name", default_name)
-    name_input.tooltip = "Name of the exported model"
-    name_input.tooltipDescription = "Used as the output folder name and MJCF model name. Cannot be blank or contain characters invalid in file names."
+    general_tab = inputs.addTabCommandInput(ID_TAB_GENERAL, "General")
+    general_inputs = GeneralInputs(inputs=general_tab.children, design=design)
+    general_inputs.build()
 
-    env_input = inputs.addBoolValueInput(
-        "with_environment", "Ground plane", True, "", settings["with_environment"]
+    collisions_tab = inputs.addTabCommandInput(ID_TAB_COLLISIONS, "Collisions")
+    collision_inputs = CollisionInputs(
+        inputs=collisions_tab.children,
+        design=design,
+        logger=logger,
     )
-    env_input.tooltip = (
-        "Include an enviroment (ground plane, light, etc) around the exported model"
-    )
-    env_input.tooltipDescription = """
-        If unchecked, the model is exported without an additional environment.
-
-        This is useful if the model will be imported into simulation environments.
-        """
-
-    colors_input = inputs.addBoolValueInput(
-        "with_colors", "Include colors", True, "", settings["with_colors"]
-    )
-    colors_input.tooltip = "Export component appearance colors and materials"
-    colors_input.tooltipDescription = """
-        Reads the appearance (color, roughness, metalness) assigned to each
-        component in Fusion 360 and writes it into the MuJoCo XML.
-
-        This does not include textures/patterns.
-        """
-
-    short_names_input = inputs.addBoolValueInput(
-        "use_short_names", "Use short names", True, "", settings["use_short_names"]
-    )
-    short_names_input.tooltip = "Shorten body names by removing redundant path segments"
-    short_names_input.tooltipDescription = """
-      Instead of using the full assembly path as the name for each body, this option
-      drops path segments that are identical across all instances, keeping only the
-      segments needed to uniquely identify each one.
-    """
-
-    refinement_input = inputs.addDropDownCommandInput(
-        "mesh_resolution",
-        "Mesh resolution",
-        adsk.core.DropDownStyles.TextListDropDownStyle,
-    )
-    for level in ("Low", "Medium", "High"):
-        refinement_input.listItems.add(level, level == settings["mesh_resolution"])
-    refinement_input.tooltip = "Mesh resolution used when exporting visual STL files"
-    refinement_input.tooltipDescription = """
-        Low  — fastest export, coarser geometry (default).
-        Medium — balanced quality and speed.
-        High — finest geometry, longest export time.
-    """
-
-    if not _is_windows_arm():
-        convexify_input = inputs.addBoolValueInput(
-            "should_convexify",
-            "Collision meshes",
-            True,
-            "",
-            settings["should_convexify"],
-        )
-        convexify_input.tooltip = """
-            Uses CoACD to create collision meshes for the visual body meshes
-            """
-        convexify_input.tooltipDescription = """
-          This will make your simulations more stable and accurate, but takes a lot longer to create.
-
-          Depending on how low you set the threshold, each body can take several minutes to export.
-
-          https://github.com/SarahWeiii/CoACD
-        """
-
-        convex_threshold = inputs.addFloatSpinnerCommandInput(
-            "convex_threshold",
-            "Concavity threshold",
-            "",
-            0.01,
-            1.0,
-            0.05,
-            settings["convex_threshold"],
-        )
-        convex_threshold.isEnabled = settings["should_convexify"]
-        convex_threshold.tooltip = "The threshold for the CoACD algorithm"
-        convex_threshold.tooltipDescription = """
-          A lower number means more detailed collision meshes, but takes longer to create.
-
-          More information: https://github.com/SarahWeiii/CoACD
-        """
+    collision_inputs.build()
 
     futil.add_handler(
         args.command.execute, command_execute, local_handlers=local_handlers
@@ -213,41 +130,23 @@ def command_created(args: adsk.core.CommandCreatedEventArgs):
 # This event handler is called when the user clicks the OK button in the command dialog or
 # is immediately called after the created event not command inputs were created for the dialog.
 def command_execute(args: adsk.core.CommandEventArgs):
-    inputs = args.command.commandInputs
-    model_name: str = inputs.itemById("model_name").value.strip()
-    with_environment: bool = inputs.itemById("with_environment").value
-    with_colors: bool = inputs.itemById("with_colors").value
-    use_short_names: bool = inputs.itemById("use_short_names").value
-    mesh_resolution: str = inputs.itemById("mesh_resolution").selectedItem.name
+    if general_inputs is None:
+        return
 
-    should_convexify = False
-    convex_threshold: float | None = None
-    saved_convex_threshold = load_settings()["convex_threshold"]
-    if not _is_windows_arm():
-        should_convexify = inputs.itemById("should_convexify").value
-        if should_convexify:
-            convex_threshold = inputs.itemById("convex_threshold").value
-        saved_convex_threshold = inputs.itemById("convex_threshold").value
+    # Save input values for the next session
+    general_inputs.save()
+    collision_inputs.save()
 
-    save_model_export_name(model_name)
-    save_settings(
-        {
-            "with_environment": with_environment,
-            "with_colors": with_colors,
-            "use_short_names": use_short_names,
-            "mesh_resolution": mesh_resolution,
-            "should_convexify": should_convexify,
-            "convex_threshold": saved_convex_threshold,
-        }
-    )
-
+    # Export the model
     exporter = Exporter(
-        name=model_name,
-        use_short_names=use_short_names,
-        mesh_resolution=mesh_resolution,
-        convex_threshold=convex_threshold,
-        with_environment=with_environment,
-        with_colors=with_colors,
+        name=general_inputs.model_name,
+        use_short_names=general_inputs.use_short_names,
+        mesh_resolution=general_inputs.mesh_resolution,
+        with_environment=general_inputs.with_environment,
+        with_colors=general_inputs.with_colors,
+        convexify=collision_inputs.should_convexify,
+        convex_threshold=collision_inputs.convex_threshold,
+        component_collision_settings=collision_inputs.component_collision_settings,
     )
     exporter.export()
 
@@ -256,69 +155,27 @@ def command_execute(args: adsk.core.CommandEventArgs):
 # allowing you to modify values of other inputs based on that change.
 def command_input_changed(args: adsk.core.InputChangedEventArgs):
     changed_input = args.input
-    inputs = args.inputs
-
-    if changed_input.id == "model_name":
-        cleaned = _INVALID_FILENAME_CHARS.sub("", changed_input.value)
-        if cleaned != changed_input.value:
-            changed_input.value = cleaned
-
-    # Enable/disable the concavity threshold input based on the should_convexify input
-    if changed_input.id == "should_convexify" and not _is_windows_arm():
-        should_convexify = inputs.itemById("should_convexify").value
-        convex_threshold: adsk.core.FloatSpinnerCommandInput = inputs.itemById(
-            "convex_threshold"
-        )
-        convex_threshold.isEnabled = should_convexify
+    general_inputs.handle_input_changed(changed_input)
+    collision_inputs.handle_input_changed(changed_input)
 
 
 # This event handler is called when the user interacts with any of the inputs in the dialog
 # which allows you to verify that all of the inputs are valid and enables the OK button.
 def command_validate_input(args: adsk.core.ValidateInputsEventArgs):
-    inputs = args.inputs
+    general_valid = True
+    collision_valid = True
 
-    name_input = inputs.itemById("model_name")
-    if name_input:
-        name_val = name_input.value.strip()
-        if not name_val or _INVALID_FILENAME_CHARS.search(name_val):
-            args.areInputsValid = False
-            return
+    if general_inputs is not None and not general_inputs.validate():
+        general_valid = False
+    if collision_inputs is not None and not collision_inputs.validate():
+        collision_valid = False
 
-    convex_threshold = inputs.itemById("convex_threshold")
-    if convex_threshold and convex_threshold.isEnabled:
-        if not (0.01 <= convex_threshold.value <= 1.0):
-            args.areInputsValid = False
-            return
+    args.areInputsValid = general_valid or collision_valid
 
 
 # This event handler is called when the command terminates.
 def command_destroy(args: adsk.core.CommandEventArgs):
-    global local_handlers
+    global local_handlers, general_inputs, collision_inputs
     local_handlers = []
-
-
-def load_model_export_name() -> str:
-    """
-    Loads the name of the base component, or the previous export name used for this model.
-    """
-    design = adsk.fusion.Design.cast(app.activeProduct)
-    saved_name_attr = design.attributes.itemByName("Fusion2Mujoco", ATTR_EXPORT_NAME)
-    if saved_name_attr and saved_name_attr.value.strip():
-        return saved_name_attr.value.strip()
-    else:
-        return _sanitize_filename(design.rootComponent.name or "Model")
-
-
-def save_model_export_name(name: str):
-    """
-    Saves the name of the export for this model.
-    """
-
-    # If the name is the same as the component name, do not save
-    design = adsk.fusion.Design.cast(app.activeProduct)
-    component_name = _sanitize_filename(design.rootComponent.name)
-    if name == component_name:
-        design.attributes.add("Fusion2Mujoco", ATTR_EXPORT_NAME, "")
-
-    design = adsk.fusion.Design.cast(app.activeProduct)
-    design.attributes.add("Fusion2Mujoco", ATTR_EXPORT_NAME, name)
+    general_inputs = None
+    collision_inputs = None

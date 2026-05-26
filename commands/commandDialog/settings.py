@@ -30,6 +30,16 @@ def load_settings() -> dict:
         return dict(DEFAULT_SETTINGS)
 
 
+def merge_settings(new_settings: dict) -> dict:
+    """
+    Merges these settings values with the existing ones in the settings file
+    """
+    existing_settings = load_settings()
+    merged = {**existing_settings, **new_settings}
+    save_settings(merged)
+    return merged
+
+
 def save_settings(settings: dict):
     """
     Saves the settings to the settings file
