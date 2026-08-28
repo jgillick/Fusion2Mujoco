@@ -141,7 +141,7 @@ class CollisionInputs:
         merge_settings(
             {
                 "should_convexify": self.should_convexify,
-                "convex_threshold": self.convex_threshold,
+                "convex_threshold": self.threshold_input.value,
             }
         )
         self.table.save()
