@@ -1,12 +1,13 @@
 from __future__ import annotations
+from collections import defaultdict
 from typing import TYPE_CHECKING
 import adsk, adsk.fusion
 
-from . import utils
 from .body import MjcfBody
 
 if TYPE_CHECKING:
     from .exporter import Exporter
+    from .naming import OccurrenceNamer
 
 
 class MjcfBodyCollection:
@@ -42,7 +43,7 @@ class MjcfBodyCollection:
                 root component and emit log messages.
             use_short_names (bool): When True, call ``shorten_names()`` on
                 the collection before returning so each body uses the
-                shortest name that remains unique.
+                shortest name that is still unique.
 
         Returns:
             MjcfBodyCollection: The populated collection.
@@ -81,92 +82,85 @@ class MjcfBodyCollection:
 
         collection = MjcfBodyCollection(items)
         if use_short_names:
-            collection.shorten_names()
+            collection.shorten_names(exporter.namer)
         return collection
 
-    def shorten_names(self) -> None:
+    def shorten_names(self, namer: OccurrenceNamer) -> None:
         """
-        Assign each body a ``short_name`` using the minimum set of path
-        segments needed to keep all names unique.
+        Assign each body a ``short_name``: its own component name plus only
+        the parent path segments needed to make it unique.
 
-        All names remain unique; only the segments strictly necessary to
-        distinguish each individual name from every other are retained.
+        For example ``Robot_Leg_Hip_Motor``, ``Robot_Leg_Tibia_Motor`` and
+        ``Robot_Leg_Foot`` become ``Hip_Motor``, ``Tibia_Motor`` and ``Foot``.
 
-        The algorithm uses per-name position sets rather than a single
-        global set. This prevents a segment that is required to distinguish
-        one group of names (e.g. Hip vs Tibia for Motor entries) from being
-        unnecessarily injected into unrelated names (e.g. Foot entries where
-        the joint-level segment adds no information).
+        Segments are the occurrences in the body's assembly path, so a
+        component name containing underscores (``Hip_Motor``) is never split
+        apart, and the body's own component name is always kept in full.
 
-        Steps:
+        Each body keeps its own set of retained segment positions rather than
+        sharing one global set. That way a segment needed to tell two bodies
+        apart (``Hip`` vs ``Tibia`` for the motors above) is not forced into
+        unrelated names (``Foot``).
 
-        1. Split each full name by ``_`` into a segment list.
-        2. Pad all lists to the same length with ``None`` for comparison.
-        3. Seed each name's retained-position set with its last segment.
-        4. Repeatedly find collision groups (names that currently share the
-           same projected short name). For each group, add the single
-           position that produces the most distinct values within the group
-           (ties broken by earliest position) to every member's set.
-        5. Repeat until no collisions remain or no progress can be made.
-        6. Write the joined short name back onto each body's
-           ``short_name`` attribute.
+        Algorithm:
+
+        1. Start each body with only its last segment (its component name).
+        2. Group bodies whose current short names collide.
+        3. For each group, add the segment position that best splits the
+           group (most distinct values, ties going to the earliest position)
+           to every member of the group.
+        4. Repeat until nothing collides, or no position can split a group
+           (which only happens for truly identical paths).
+
+        Args:
+            namer (OccurrenceNamer): Splits each body's path into
+                filename-safe segments.
         """
-        if not self._items:
-            return
+        segments = [namer.segments(body.full_name) for body in self._items]
+        kept_positions: list[set[int]] = [{len(segs) - 1} for segs in segments]
 
-        full_names = [
-            utils.get_valid_filename(occ.occurrence.fullPathName) for occ in self._items
-        ]
-        seg_lists: list[list[str]] = [name.split("_") for name in full_names]
-        max_len = max(len(s) for s in seg_lists)
+        def segment_at(i: int, position: int) -> str | None:
+            """The segment of body ``i`` at ``position``, or None past the end."""
+            return segments[i][position] if position < len(segments[i]) else None
 
-        # Pad shorter lists with None so all rows have the same width.
-        padded: list[list[str | None]] = [
-            segs + [None] * (max_len - len(segs)) for segs in seg_lists
-        ]
-        n = len(padded)
+        def short_name(i: int) -> str:
+            values = (segment_at(i, p) for p in sorted(kept_positions[i]))
+            return "_".join(value for value in values if value is not None)
 
-        # Per-name retained positions, each seeded with the name's last segment.
-        kept: list[set[int]] = [{len(segs) - 1} for segs in seg_lists]
-
-        def _short_name(i: int) -> str:
-            segs = seg_lists[i]
-            return "_".join(segs[p] for p in sorted(kept[i]) if p < len(segs))
+        def distinct_values(group: list[int], position: int) -> int:
+            """How many different segments the group's bodies have at ``position``."""
+            return len({segment_at(i, position) for i in group})
 
         while True:
-            # Group indices by their current projected short name.
-            groups: dict[str, list[int]] = {}
-            for i in range(n):
-                groups.setdefault(_short_name(i), []).append(i)
-
-            collision_groups = [g for g in groups.values() if len(g) > 1]
-            if not collision_groups:
+            groups: dict[str, list[int]] = defaultdict(list)
+            for i in range(len(segments)):
+                groups[short_name(i)].append(i)
+            collisions = [group for group in groups.values() if len(group) > 1]
+            if not collisions:
                 break
 
             progress = False
-            for group in collision_groups:
-                # Positions already used by any member of this group.
-                used = set().union(*(kept[i] for i in group))
-                candidates = [p for p in range(max_len) if p not in used]
-                if not candidates:
-                    continue
-
-                # Pick the position that creates the most distinct values
-                # within this group; break ties by preferring the earliest.
-                best_pos = min(
+            for group in collisions:
+                # A position every member already keeps can't tell them apart.
+                # (One kept by only some members can, e.g. when the same
+                # component sits at different depths.)
+                used = set.intersection(*(kept_positions[i] for i in group))
+                longest = max(len(segments[i]) for i in group)
+                candidates = [p for p in range(longest) if p not in used]
+                best = min(
                     candidates,
-                    key=lambda p: (-len({padded[i][p] for i in group}), p),
+                    key=lambda p: (-distinct_values(group, p), p),
+                    default=None,
                 )
-                if len({padded[i][best_pos] for i in group}) < 2:
-                    continue  # no position can split this group
+                if best is None or distinct_values(group, best) < 2:
+                    continue  # nothing left can split this group
 
                 for i in group:
-                    kept[i].add(best_pos)
+                    kept_positions[i].add(best)
                 progress = True
 
             if not progress:
-                break  # remaining collisions are unresolvable (truly identical names)
+                break
 
-        # Assign final short names.
-        for i, occ in enumerate(self._items):
-            occ.short_name = _short_name(i)
+        for i, body in enumerate(self._items):
+            body.short_name = short_name(i)

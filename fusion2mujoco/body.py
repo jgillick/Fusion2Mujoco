@@ -2,7 +2,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 import adsk, adsk.fusion, adsk.core
 
-from . import utils
 from . import math_operation as math_op
 from .mesh import MeshCollection
 from .appearance import AppearanceData
@@ -30,7 +29,7 @@ class MjcfBody:
             inertia, and center of mass.
         short_name (str | None): An optional abbreviated name assigned by
             ``MjcfBodyCollection.shorten_names()``. When set, ``name``
-            returns this instead of the full sanitised path.
+            returns this instead of the full path name.
         mesh (MeshCollection): The visual and collision mesh files for this
             body. The visual STL is built by merging all direct visible
             BRepBodies of the component (child-component bodies are excluded).
@@ -84,15 +83,15 @@ class MjcfBody:
         The body's display name, used as the ``name`` attribute in MJCF.
 
         Returns the ``short_name`` if one has been assigned by
-        ``MjcfBodyCollection.shorten_names()``, otherwise returns the full
-        path sanitised into a valid filename string.
+        ``MjcfBodyCollection.shorten_names()``, otherwise the full assembly
+        path converted to a filename-safe name (see ``OccurrenceNamer``).
 
         Returns:
             str: The body's name.
         """
         if self.short_name is not None:
             return self.short_name
-        return utils.get_valid_filename(self.full_name)
+        return self.exporter.namer.name(self.full_name)
 
     def get_inertia(self) -> list:
         """

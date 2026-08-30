@@ -4,6 +4,7 @@ from os import path
 from .mesh import MeshCollection
 from .body_collection import MjcfBodyCollection
 from .body import MjcfBody
+from .naming import OccurrenceNamer
 from .mjcf_builder import MjcfBuilder
 from .errors import ExportError
 
@@ -35,7 +36,7 @@ class Exporter:
         # Options
         self.short_body_names: bool = use_short_names
         self.mesh_resolution: str = mesh_resolution
-        self.convexify: bool = convex_threshold
+        self.convexify: bool = convexify
         self.convex_threshold: float | None = convex_threshold
         self.component_collision_settings: dict[str, float | None] | None = (
             component_collision_settings
@@ -47,6 +48,7 @@ class Exporter:
         self.name = name
         self.design = None
         self.rootComp = None
+        self.namer: OccurrenceNamer = OccurrenceNamer()
         self.destination: str = None
         self.mesh_root: str = None
         self.xml_file_name: str = f"{name}.xml"
@@ -123,6 +125,7 @@ class Exporter:
 
         try:
             self.root = self.design.rootComponent
+            self.namer = OccurrenceNamer(self.root.allOccurrences)
             self.choose_destination()
 
             self.mjcf_bodies = MjcfBodyCollection.collect(
