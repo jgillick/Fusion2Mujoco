@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ET
 from .body import MjcfBody
 from .joint import Joint
 from . import math_operation as math_op
+from .. import config
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -36,6 +37,7 @@ class MjcfBuilder:
         self.world_body_el: ET.Element = None
 
         self.built_materials: dict[str, str] = {}
+        self.ground_offset: float = 0.0
         self.has_collision_meshes = exporter.convexify
         self.root_bodies: set[MjcfBody] = set([])
         self.joint_relationships: dict[str, list[MjcfBody]] = {}
@@ -46,11 +48,13 @@ class MjcfBuilder:
         """
         self.exporter.update_progress("Building MJCF file...")
         self.parse_joint_relationships()
+        self.ground_offset = self.compute_ground_offset()
 
         # Build XML
         self.root_el = ET.Element("mujoco", {"model": self.exporter.name})
         self.build_compiler()
         self.build_defaults()
+        self.build_custom()
         self.build_assets()
         self.build_material_assets()
         self.build_worldbody()
@@ -66,6 +70,12 @@ class MjcfBuilder:
 
         self.exporter.update_progress(f"Saving to {file_path}...")
         with open(file_path, "wb") as handle:
+            # ElementTree only serializes the root element, so the file
+            # header comments are written directly.
+            handle.write(
+                f"<!-- Generated using Fusion2Mujoco v{config.ADDIN_VERSION} -->\n"
+                f"<!-- {config.REPO_URL} -->\n".encode("utf-8")
+            )
             tree.write(handle, encoding="utf-8", xml_declaration=False)
 
     def build_compiler(self):
@@ -114,6 +124,19 @@ class MjcfBuilder:
 
         return defaults
 
+    def build_custom(self):
+        """
+        Build the custom block, which carries model metadata that does not
+        affect the simulation.
+        """
+        custom_el = ET.SubElement(self.root_el, "custom")
+        ET.SubElement(
+            custom_el,
+            "numeric",
+            {"name": "ground_offset", "data": f"{self.ground_offset:.6g}"},
+        )
+        return custom_el
+
     def build_assets(self):
         """
         Build the assets block
@@ -147,18 +170,32 @@ class MjcfBuilder:
         root_body_el = self.world_body_el
 
         # Add offset from the ground plane
+        offset_str = f"{self.ground_offset:.6g}"
         if self.with_environment:
-            pos = "0.0 0.0 0.0"
-            if self.with_environment:
-                z_offset = self.compute_ground_offset()
-                pos = f"0.0 0.0 {z_offset:.6g}"
-
             root_body_el = ET.SubElement(
                 self.world_body_el,
                 "body",
-                {"pos": pos, "quat": "1 0 0 0"},
+                {
+                    "name": "model_root",
+                    "pos": f"0.0 0.0 {offset_str}",
+                    "quat": "1 0 0 0",
+                },
             )
             ET.SubElement(root_body_el, "freejoint")
+        else:
+            self.world_body_el.append(
+                ET.Comment(
+                    f" Lowest point of the model is at z = {-self.ground_offset:.6g}m in this frame. "
+                ),
+            )
+            self.world_body_el.append(
+                ET.Comment(
+                    f" Lift the model by {offset_str}m to rest it on a z=0 ground plane. "
+                ),
+            )
+            self.world_body_el.append(
+                ET.Comment(' See <custom><numeric name="ground_offset">. '),
+            )
 
         # Add all the top-level bodies/occurrences
         for body in self.root_bodies:
@@ -185,8 +222,8 @@ class MjcfBuilder:
             quat = math_op.matrix3d_to_quat(parent_T_child)
 
         # Create element
-        (x, y, z) = pos
-        (qw, qx, qy, qz) = quat
+        x, y, z = pos
+        qw, qx, qy, qz = quat
         body_el = ET.SubElement(parent_el, "body")
         body_el.attrib = {
             "name": body.name,
