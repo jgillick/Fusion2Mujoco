@@ -4,7 +4,6 @@ import adsk, adsk.fusion, adsk.core
 
 from . import utils
 from . import math_operation as math_op
-from .joint import Joint
 from .mesh import MeshCollection
 from .appearance import AppearanceData
 
@@ -68,27 +67,6 @@ class MjcfBody:
             return max(dx, dy, dz)
         except Exception:
             return None
-
-    def get_parent_joint(self) -> Joint | None:
-        """
-        Return the joint whose child occurrence is this body, or ``None``.
-
-        In a closed-loop mechanism a component may have more than one parent
-        joint; only the first match is returned.
-
-        Returns:
-            Joint | None: The parent joint, or ``None`` if this body is a
-                root (unjointed) body.
-        """
-        app = adsk.core.Application.get()
-        root = adsk.fusion.Design.cast(app.activeProduct).rootComponent
-        for joint in root.allJoints:
-            if joint.occurrenceOne == self.occurrence:
-                return Joint(joint)
-        for joint in root.allAsBuiltJoints:
-            if joint.occurrenceOne == self.occurrence:
-                return Joint(joint)
-        return None
 
     @property
     def full_name(self) -> str:

@@ -41,6 +41,49 @@ class Joint:
         except Exception as e:
             raise ValueError(f"Invalid joint: {joint.name}: {str(e)}")
 
+    @property
+    def name(self) -> str:
+        return self.joint.name
+
+    @property
+    def is_as_built(self) -> bool:
+        """
+        True if this wraps an as-built joint (``adsk.fusion.AsBuiltJoint``)
+        rather than a standard joint (``adsk.fusion.Joint``).
+        """
+        return self.joint.objectType == adsk.fusion.AsBuiltJoint.classType()
+
+    def _attachment_point(self) -> list[float]:
+        """
+        Return the joint's attachment point in root-component space, in
+        Fusion's native centimeters.
+
+        As-built joints carry a single ``geometry``; standard joints carry a
+        geometry (or joint origin) per side, of which the parent side
+        (``geometryOrOriginTwo``) is used.
+
+        Returns:
+            list[float]: ``[x, y, z]`` in centimeters, in root-component
+                (world) space.
+
+        Raises:
+            ValueError: If an as-built joint has no geometry (only rigid
+                as-built joints, which never need an origin).
+        """
+        if self.is_as_built:
+            geometry = self.joint.geometry
+            if geometry is None:
+                # Only rigid as-built joints have no geometry, and those never
+                # need an origin because no <joint> element is emitted.
+                raise ValueError(f"As-built joint '{self.name}' has no geometry")
+            return geometry.origin.asArray()
+
+        geom_or_origin = self.joint.geometryOrOriginTwo
+        joint_origin = adsk.fusion.JointOrigin.cast(geom_or_origin)
+        if joint_origin is not None:
+            return joint_origin.geometry.origin.asArray()
+        return geom_or_origin.origin.asArray()
+
     def get_origin(self) -> list:
         """
         Find the joint attachment point expressed in the child link's own frame.
@@ -55,14 +98,7 @@ class Joint:
             list: [x, y, z] offset in meters, expressed in the child link's
                 local coordinate frame.
         """
-        if hasattr(self.joint, "geometry"):
-            w_P_Jc = self.joint.geometry.origin.asArray()
-        elif self.joint.geometryOrOriginTwo == adsk.fusion.JointOrigin:
-            w_P_Jc = self.joint.geometryOrOriginTwo.geometry.origin.asArray()
-        else:
-            w_P_Jc = self.joint.geometryOrOriginTwo.origin.asArray()
-
-        w_P_Jc = [round(i * 0.01, 6) for i in w_P_Jc]
+        w_P_Jc = [round(i * 0.01, 6) for i in self._attachment_point()]
         w_P_Lc = math_op.matrix3d_to_pos(self.child.transform2)
 
         w_V_LcJc = [[w_P_Jc[i] - w_P_Lc[i]] for i in range(3)]
@@ -162,3 +198,32 @@ class Joint:
         child_R_world = math_op.matrix_transpose(child_rotation)
         result_col = math_op.change_orientation(child_R_world, axis_col)
         return [row[0] for row in result_col]
+
+    @staticmethod
+    def collect_joints(root: adsk.fusion.Component) -> list["Joint"]:
+        """
+        Return every usable joint in the design, both standard and as-built,
+        wrapped as ``Joint`` objects.
+
+        Joints are skipped when they are suppressed or when either occurrence
+        is missing (a standard joint grounded directly to the root component
+        has no ``occurrenceTwo``).
+
+        Args:
+            root (adsk.fusion.Component): The root component of the design.
+                ``allJoints`` / ``allAsBuiltJoints`` include joints from
+                nested components, with occurrences expressed in the root
+                context.
+
+        Returns:
+            list[Joint]: Standard joints first, then as-built joints, in the
+                order Fusion reports them.
+        """
+        joints: list[Joint] = []
+        for fusion_joint in list(root.allJoints) + list(root.allAsBuiltJoints):
+            if fusion_joint.isSuppressed:
+                continue
+            if fusion_joint.occurrenceOne is None or fusion_joint.occurrenceTwo is None:
+                continue
+            joints.append(Joint(fusion_joint))
+        return joints

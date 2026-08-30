@@ -5,6 +5,7 @@ import adsk, adsk.core
 import xml.etree.ElementTree as ET
 from .body import MjcfBody
 from .joint import Joint
+from .errors import ExportError
 from . import math_operation as math_op
 from .. import config
 from typing import TYPE_CHECKING
@@ -40,7 +41,10 @@ class MjcfBuilder:
         self.ground_offset: float = 0.0
         self.has_collision_meshes = exporter.convexify
         self.root_bodies: set[MjcfBody] = set([])
+        # Parent body full path -> child bodies
         self.joint_relationships: dict[str, list[MjcfBody]] = {}
+        # Child body full path -> the joint that attaches it to its parent
+        self.parent_joints: dict[str, Joint] = {}
 
     def build(self):
         """
@@ -236,7 +240,7 @@ class MjcfBuilder:
             ET.SubElement(body_el, "freejoint")
 
         # Add parent joint if it exists
-        parent_joint = body.get_parent_joint()
+        parent_joint = self.parent_joints.get(body.full_name)
         if parent_joint is not None:
             self.build_joint(parent_joint, body, body_el)
 
@@ -410,7 +414,13 @@ class MjcfBuilder:
     def parse_joint_relationships(self):
         """
         Create a lookup dictionary of all joints by their parent occurrence,
-        and a set of all root bodies.
+        a lookup of each child's parent joint, and a set of all root bodies.
+
+        Both standard and as-built joints are considered.
+
+        Raises:
+            ExportError: If a component is the child of more than one joint
+                (MJCF is a tree; each body has exactly one parent).
         """
 
         # Map paths to mjcf body instances
@@ -420,16 +430,32 @@ class MjcfBuilder:
             self.root_bodies.add(body)
 
         # Build the joint relationships dictionary
-        for joint in self.exporter.root.allJoints:
-            parent = joint.occurrenceTwo
-            child = joint.occurrenceOne
-            if parent is None or child.fullPathName not in body_path_map:
-                continue
-            if parent.fullPathName not in self.joint_relationships:
-                self.joint_relationships[parent.fullPathName] = []
+        joints = Joint.collect_joints(self.exporter.root)
+        num_as_built = sum(1 for joint in joints if joint.is_as_built)
+        self.exporter.log(
+            f"Found {len(joints)} joints "
+            f"({len(joints) - num_as_built} standard, {num_as_built} as-built)"
+        )
 
-            child_body = body_path_map[child.fullPathName]
-            self.joint_relationships[parent.fullPathName].append(child_body)
+        for joint in joints:
+            parent_path = joint.parent.fullPathName
+            child_path = joint.child.fullPathName
+            if child_path not in body_path_map:
+                continue
+
+            existing = self.parent_joints.get(child_path)
+            if existing is not None:
+                raise ExportError(
+                    f"Component '{child_path}' is the child (Component 1) of "
+                    f"more than one joint: '{existing.name}' and '{joint.name}'.\n\n"
+                    "MuJoCo requires a kinematic tree where each body has exactly "
+                    "one parent. Restructure the assembly so this component is "
+                    "the child of a single joint, or suppress one of the joints."
+                )
+
+            child_body = body_path_map[child_path]
+            self.parent_joints[child_path] = joint
+            self.joint_relationships.setdefault(parent_path, []).append(child_body)
             if child_body in self.root_bodies:
                 self.root_bodies.remove(child_body)
 

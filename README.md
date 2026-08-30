@@ -26,7 +26,7 @@ Once loaded, an **Export to Mujoco** button appears in the **Utilities** panel o
 
 ## Usage
 
-1. Open the Fusion 360 assembly you want to export. The model should use standard joints (not as-built joints) to define the kinematic structure.
+1. Open the Fusion 360 assembly you want to export. The model should use joints to connect all the components to one another, with one root component. Prefer standard joints, because as-built joints might not work in all cases.
 
 2. Goto the **Utilities** tab and click the **Export to Mujoco** button in the toolbar
    <br /><img src="docs/images/toolbar.png" height="100" alt="" />
@@ -56,13 +56,15 @@ Once loaded, an **Export to Mujoco** button appears in the **Utilities** panel o
 
 ## Limitations
 
-### As-built joints are not exported
-
-Fusion 360 has two kinds of joints: _joints_ (defined during modeling) and _as-built joints_ (placed after the fact on an already-assembled design). Only standard joints are read by the exporter. If your kinematic structure relies on as-built joints, convert them to standard joints before exporting.
-
 ### Each component can only be the child link of one joint
 
-The MJCF format represents the kinematic structure as a tree, where each body has exactly one parent. If the same Fusion component appears as the child (Component 1) in more than one joint, it will be placed under multiple parents in the exported XML, producing a malformed hierarchy. Structure your assembly so that each moving component is the child of exactly one joint.
+The MJCF format represents the kinematic structure as a tree, where each body has exactly one parent. If the same Fusion component appears as the child (Component 1) in more than one joint (standard or as-built), the export stops with an error naming the component and both joints. Structure your assembly so that each moving component is the child of exactly one joint.
+
+Suppressed joints are ignored.
+
+### As-built joints might not work
+
+There are some cases where as-built joints will not work. You should use standard joints, when possible.
 
 ### Limited joint types
 

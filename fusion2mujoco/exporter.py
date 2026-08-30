@@ -5,6 +5,7 @@ from .mesh import MeshCollection
 from .body_collection import MjcfBodyCollection
 from .body import MjcfBody
 from .mjcf_builder import MjcfBuilder
+from .errors import ExportError
 
 MESH_DIR_NAME = "meshes"
 ATTR_GROUP = "Fusion2Mujoco"
@@ -143,6 +144,9 @@ class Exporter:
 
         except ExportCancelledException:
             self.log("Export cancelled by user.")
+        except ExportError as e:
+            self.log(f"Export failed: {e}")
+            self.message_box(f"Mujoco export failed:\n\n{e}")
         except:
             self.message_box("Mujoco export failed:\n{}".format(traceback.format_exc()))
         finally:
