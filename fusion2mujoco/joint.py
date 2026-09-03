@@ -32,12 +32,25 @@ class Joint:
     """
 
     def __init__(
-        self, joint: Union[adsk.fusion.Joint, adsk.fusion.AsBuiltJoint]
+        self,
+        joint: Union[adsk.fusion.Joint, adsk.fusion.AsBuiltJoint],
+        parent: adsk.fusion.Occurrence | None = None,
+        child: adsk.fusion.Occurrence | None = None,
     ) -> None:
+        """
+        Args:
+            joint: The Fusion joint (or joint proxy) to wrap.
+            parent: Root-context occurrence to use as the parent link instead
+                of ``joint.occurrenceTwo``. Joint proxies report their
+                occurrences in the owning component's context, so callers that
+                know the root-context occurrences should pass them here.
+            child: Root-context occurrence to use as the child link instead of
+                ``joint.occurrenceOne``.
+        """
         self.joint = joint
         try:
-            self.parent = joint.occurrenceTwo  # parent link of joint
-            self.child = joint.occurrenceOne
+            self.parent = parent if parent is not None else joint.occurrenceTwo
+            self.child = child if child is not None else joint.occurrenceOne
         except Exception as e:
             raise ValueError(f"Invalid joint: {joint.name}: {str(e)}")
 
@@ -203,7 +216,19 @@ class Joint:
     def collect_joints(root: adsk.fusion.Component) -> list["Joint"]:
         """
         Return every usable joint in the design, both standard and as-built,
-        wrapped as ``Joint`` objects.
+        wrapped as ``Joint`` objects whose occurrences and geometry are
+        expressed in the root assembly context.
+
+        Joints defined at the root level are used natively. Joints defined
+        inside a subcomponent are reported by Fusion in the owning
+        component's own context, so each one is wrapped in a root-context
+        proxy with ``createForAssemblyContext`` — one per occurrence of the
+        owning component, since every instance of the component carries its
+        own copy of the joint. Even a joint proxy still reports its
+        ``occurrenceOne``/``occurrenceTwo`` in the owning component's
+        context, so the root-context occurrences are resolved separately by
+        prefixing each occurrence path with the owning occurrence's path and
+        looking it up in ``root.allOccurrences``.
 
         Joints are skipped when they are suppressed or when either occurrence
         is missing (a standard joint grounded directly to the root component
@@ -211,19 +236,53 @@ class Joint:
 
         Args:
             root (adsk.fusion.Component): The root component of the design.
-                ``allJoints`` / ``allAsBuiltJoints`` include joints from
-                nested components, with occurrences expressed in the root
-                context.
 
         Returns:
-            list[Joint]: Standard joints first, then as-built joints, in the
-                order Fusion reports them.
+            list[Joint]: Root-level joints first, then nested joints in
+                occurrence-tree order.
         """
+        occ_by_path: dict[str, adsk.fusion.Occurrence] = {
+            occ.fullPathName: occ for occ in root.allOccurrences
+        }
         joints: list[Joint] = []
-        for fusion_joint in list(root.allJoints) + list(root.allAsBuiltJoints):
+
+        def resolve_occurrence(
+            occ: adsk.fusion.Occurrence, context: adsk.fusion.Occurrence
+        ) -> adsk.fusion.Occurrence | None:
+            """
+            Return the root-context occurrence for ``occ``, an occurrence a
+            nested joint reports in its owning component's context, by
+            prefixing its path with the context occurrence's path.
+            """
+            prefix = context.fullPathName + "+"
+            if occ.fullPathName.startswith(prefix):
+                return occ  # already in root context
+            return occ_by_path.get(prefix + occ.fullPathName)
+
+        def append_joint(fusion_joint, context: adsk.fusion.Occurrence | None):
             if fusion_joint.isSuppressed:
-                continue
-            if fusion_joint.occurrenceOne is None or fusion_joint.occurrenceTwo is None:
-                continue
-            joints.append(Joint(fusion_joint))
+                return
+            child = fusion_joint.occurrenceOne
+            parent = fusion_joint.occurrenceTwo
+            if child is None or parent is None:
+                return
+            if context is not None:
+                child = resolve_occurrence(child, context)
+                parent = resolve_occurrence(parent, context)
+                if child is None or parent is None:
+                    return
+            joints.append(Joint(fusion_joint, parent=parent, child=child))
+
+        for fusion_joint in list(root.joints) + list(root.asBuiltJoints):
+            append_joint(fusion_joint, None)
+
+        for occ in occ_by_path.values():
+            comp = occ.component
+            for nested_joint in list(comp.joints) + list(comp.asBuiltJoints):
+                # The proxy expresses the joint's geometry and axis vectors in
+                # root coordinates; fall back to the native joint if Fusion
+                # cannot create one (only matters for non-rigid joints).
+                proxy = nested_joint.createForAssemblyContext(occ)
+                append_joint(proxy or nested_joint, occ)
+
         return joints

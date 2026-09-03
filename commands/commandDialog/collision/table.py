@@ -189,6 +189,10 @@ class CollisionTable:
         )
         self.table.addCommandInput(threshold_input, row_index, 2)
 
+        # Grey out the row if collision is disabled
+        name_input.isEnabled = saved_collision_enabled
+        threshold_input.isEnabled = saved_collision_enabled
+
         # Save row configuration
         row = CollisionTableRow(
             entity_token=comp.entity_token,

@@ -441,6 +441,18 @@ class MjcfBuilder:
             parent_path = joint.parent.fullPathName
             child_path = joint.child.fullPathName
             if child_path not in body_path_map:
+                self.exporter.log(
+                    f"Skipping joint '{joint.name}': child occurrence "
+                    f"'{child_path}' has no exported body"
+                )
+                continue
+            if parent_path not in body_path_map:
+                # Without an exported parent body the child would never be
+                # emitted; leave it as a free root body instead.
+                self.exporter.log(
+                    f"Skipping joint '{joint.name}': parent occurrence "
+                    f"'{parent_path}' has no exported body"
+                )
                 continue
 
             existing = self.parent_joints.get(child_path)
