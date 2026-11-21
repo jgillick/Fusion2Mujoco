@@ -26,7 +26,9 @@ class MjcfBody:
             ``occurrence.transform2``).
         phyPro (adsk.fusion.PhysicalProperties): Physical properties of the
             occurrence, computed at very high accuracy. Used to query mass,
-            inertia, and center of mass.
+            inertia, and center of mass. Computed on first access and cached,
+            since it is by far the most expensive call on an occurrence and
+            callers that only need names or joints never touch it.
         short_name (str | None): An optional abbreviated name assigned by
             ``MjcfBodyCollection.shorten_names()``. When set, ``name``
             returns this instead of the full path name.
@@ -39,17 +41,30 @@ class MjcfBody:
         """
         Args:
             occurrence (adsk.fusion.Occurrence): The Fusion 360 occurrence
-                this body wraps. Physical properties are queried immediately
-                at construction time.
+                this body wraps.
         """
         self.exporter: Exporter = exporter
         self.occurrence: adsk.fusion.Occurrence = occurrence
         self.pose: adsk.core.Matrix3D = occurrence.transform2
-        self.phyPro = occurrence.getPhysicalProperties(
-            adsk.fusion.CalculationAccuracy.VeryHighCalculationAccuracy
-        )
+        self._phyPro: adsk.fusion.PhysicalProperties | None = None
         self.short_name: str | None = None
         self.mesh: MeshCollection = MeshCollection(occurrence.component.bRepBodies)
+
+    @property
+    def phyPro(self) -> adsk.fusion.PhysicalProperties:
+        """
+        The occurrence's physical properties, computed at very high accuracy
+        on first access and cached afterwards.
+
+        Computing these is the slowest thing done per occurrence, so it is
+        deferred: building the joint graph needs names and joints only, and
+        would otherwise pay for mass and inertia it never reads.
+        """
+        if self._phyPro is None:
+            self._phyPro = self.occurrence.getPhysicalProperties(
+                adsk.fusion.CalculationAccuracy.VeryHighCalculationAccuracy
+            )
+        return self._phyPro
 
     @property
     def max_bbox_cm(self) -> float | None:

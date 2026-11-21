@@ -1,6 +1,5 @@
-from ctypes import Union
 import os
-from typing import Literal
+from typing import Literal, Union
 import trimesh
 import adsk, adsk.fusion
 from dataclasses import dataclass

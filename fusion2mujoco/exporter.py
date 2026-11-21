@@ -117,15 +117,9 @@ class Exporter:
         """
         Setup the application and the design
         """
-        app = adsk.core.Application.get()
-        self.ui = app.userInterface
-        self.design = adsk.fusion.Design.cast(app.activeProduct)
-        self.rootComp = self.design.rootComponent
-        self.textPalette = self.ui.palettes.itemById("TextCommands")
+        self.prepare()
 
         try:
-            self.root = self.design.rootComponent
-            self.namer = OccurrenceNamer(self.root.allOccurrences)
             self.choose_destination()
 
             self.mjcf_bodies = MjcfBodyCollection.collect(
@@ -155,6 +149,59 @@ class Exporter:
         finally:
             if self.progress:
                 self.progress.hide()
+
+    def prepare(self) -> None:
+        """
+        Resolve the Fusion application objects this exporter works through.
+
+        Split out of ``export`` so that work which only needs the design --
+        such as building the joint graph -- can run without choosing an
+        export folder or touching meshes.
+        """
+        app = adsk.core.Application.get()
+        self.ui = app.userInterface
+        self.design = adsk.fusion.Design.cast(app.activeProduct)
+        self.rootComp = self.design.rootComponent
+        self.root = self.rootComp
+        self.textPalette = self.ui.palettes.itemById("TextCommands")
+        self.namer = OccurrenceNamer(self.root.allOccurrences)
+
+    def generate_joint_graph(self, destination: str) -> list[str]:
+        """
+        Build the model's joint graph and write the diagrams, without
+        exporting anything else.
+
+        This is what the "Preview joint graph" button runs. It deliberately
+        skips validation: a graph is most useful precisely when the model is
+        not exportable, so problems are reported in the diagram rather than
+        raised.
+
+        Only occurrence names and joints are read, so no mesh is exported and
+        no mass or inertia is computed (``MjcfBody`` defers those until they
+        are asked for).
+
+        Args:
+            destination (str): Folder to write the diagrams into. Created if
+                it does not exist.
+
+        Returns:
+            list[str]: The diagram files written, the HTML one first.
+        """
+        self.prepare()
+        if not path.isdir(destination):
+            os.makedirs(destination)
+        self.destination = destination
+
+        self.mjcf_bodies = MjcfBodyCollection.collect(
+            self, use_short_names=self.short_body_names
+        )
+        builder = MjcfBuilder(
+            exporter=self,
+            with_environment=self.with_environment,
+            with_colors=self.with_colors,
+        )
+        builder.parse_joint_relationships()
+        return builder.write_joint_graph()
 
     def choose_destination(self) -> str | None:
         """

@@ -5,6 +5,14 @@ import adsk, adsk.core
 import xml.etree.ElementTree as ET
 from .body import MjcfBody
 from .joint import Joint
+from .joint_graph import (
+    GraphEdge,
+    JointGraph,
+    STATUS_CONFLICT,
+    STATUS_OK,
+    STATUS_RIGID,
+    STATUS_SKIPPED,
+)
 from .errors import ExportError
 from . import math_operation as math_op
 from .. import config
@@ -45,6 +53,9 @@ class MjcfBuilder:
         self.joint_relationships: dict[str, list[MjcfBody]] = {}
         # Child body full path -> the joint that attaches it to its parent
         self.parent_joints: dict[str, Joint] = {}
+        # The derived graph plus the problems found while deriving it
+        self.joint_graph: JointGraph | None = None
+        self._joint_graph_files: list[str] | None = None
 
     def build(self):
         """
@@ -52,6 +63,7 @@ class MjcfBuilder:
         """
         self.exporter.update_progress("Building MJCF file...")
         self.parse_joint_relationships()
+        self.validate_joint_graph()
         self.ground_offset = self.compute_ground_offset()
 
         # Build XML
@@ -418,16 +430,25 @@ class MjcfBuilder:
 
         Both standard and as-built joints are considered.
 
-        Raises:
-            ExportError: If a component is the child of more than one joint
-                (MJCF is a tree; each body has exactly one parent).
+        Every joint found is also recorded in ``self.joint_graph``, including
+        the ones that had to be dropped, so the graph can be rendered for
+        debugging (see :mod:`.joint_graph`). Problems are collected rather
+        than raised here; call :meth:`validate_joint_graph` afterwards to
+        turn them into an ``ExportError``.
         """
 
         # Map paths to mjcf body instances
         body_path_map: dict[str, MjcfBody] = {}
+        graph = JointGraph(
+            model_name=self.exporter.name,
+            with_environment=self.with_environment,
+        )
+        self.joint_graph = graph
+
         for body in self.exporter.mjcf_bodies:
             body_path_map[body.full_name] = body
             self.root_bodies.add(body)
+            graph.add_node(body.full_name, body.name, exported=True)
 
         # Build the joint relationships dictionary
         joints = Joint.collect_joints(self.exporter.root)
@@ -437,39 +458,236 @@ class MjcfBuilder:
             f"({len(joints) - num_as_built} standard, {num_as_built} as-built)"
         )
 
+        def record_placeholder(occ_path: str, occurrence) -> None:
+            """Add a node for a joint end that has no exported body."""
+            graph.add_node(
+                occ_path,
+                self.exporter.namer.name(occ_path),
+                exported=False,
+                note=self.exclusion_reason(occurrence),
+            )
+
         for joint in joints:
             parent_path = joint.parent.fullPathName
             child_path = joint.child.fullPathName
-            if child_path not in body_path_map:
-                self.exporter.log(
-                    f"Skipping joint '{joint.name}': child occurrence "
-                    f"'{child_path}' has no exported body"
+            joint_type = joint.get_joint_type()
+            limits = joint.get_limits()
+
+            child_missing = child_path not in body_path_map
+            parent_missing = parent_path not in body_path_map
+
+            if child_missing or parent_missing:
+                if child_missing:
+                    record_placeholder(child_path, joint.child)
+                    self.exporter.log(
+                        f"Skipping joint '{joint.name}': child occurrence "
+                        f"'{child_path}' has no exported body"
+                    )
+                if parent_missing:
+                    # Without an exported parent body the child would never be
+                    # emitted; leave it as a free root body instead.
+                    record_placeholder(parent_path, joint.parent)
+                    self.exporter.log(
+                        f"Skipping joint '{joint.name}': parent occurrence "
+                        f"'{parent_path}' has no exported body"
+                    )
+                ends = " and ".join(
+                    end
+                    for end, missing in (
+                        ("child", child_missing),
+                        ("parent", parent_missing),
+                    )
+                    if missing
                 )
-                continue
-            if parent_path not in body_path_map:
-                # Without an exported parent body the child would never be
-                # emitted; leave it as a free root body instead.
-                self.exporter.log(
-                    f"Skipping joint '{joint.name}': parent occurrence "
-                    f"'{parent_path}' has no exported body"
+                graph.add_edge(
+                    GraphEdge(
+                        parent_path,
+                        child_path,
+                        joint.name,
+                        joint_type,
+                        limits,
+                        STATUS_SKIPPED,
+                        note=f"{ends} not exported",
+                    )
                 )
                 continue
 
             existing = self.parent_joints.get(child_path)
             if existing is not None:
-                raise ExportError(
-                    f"Component '{child_path}' is the child (Component 1) of "
-                    f"more than one joint: '{existing.name}' and '{joint.name}'.\n\n"
-                    "MuJoCo requires a kinematic tree where each body has exactly "
-                    "one parent. Restructure the assembly so this component is "
-                    "the child of a single joint, or suppress one of the joints."
+                # MJCF is a tree: each body has exactly one parent. Keep the
+                # first joint so the rest of the graph still renders, and let
+                # validate_joint_graph() report the clash.
+                graph.conflicts.append((child_path, existing.name, joint.name))
+                graph.add_edge(
+                    GraphEdge(
+                        parent_path,
+                        child_path,
+                        joint.name,
+                        joint_type,
+                        limits,
+                        STATUS_CONFLICT,
+                        note="child already has a parent joint",
+                    )
                 )
+                continue
 
             child_body = body_path_map[child_path]
             self.parent_joints[child_path] = joint
             self.joint_relationships.setdefault(parent_path, []).append(child_body)
             if child_body in self.root_bodies:
                 self.root_bodies.remove(child_body)
+            graph.add_edge(
+                GraphEdge(
+                    parent_path,
+                    child_path,
+                    joint.name,
+                    joint_type,
+                    limits,
+                    STATUS_OK if joint_type is not None else STATUS_RIGID,
+                )
+            )
+
+        graph.root_paths = sorted(body.full_name for body in self.root_bodies)
+        graph.cycles = self.find_joint_cycles()
+
+    def find_joint_cycles(self) -> list[list[str]]:
+        """
+        Return every closed loop in the parent chain, as lists of occurrence
+        paths.
+
+        A loop passes the one-parent check -- in ``A -> B -> C -> A`` each
+        body does have exactly one parent -- but none of those bodies is ever
+        a root, so ``build_body`` never reaches them and they vanish from the
+        output. Finding them explicitly turns a silently truncated model into
+        an error the user can act on.
+
+        Returns:
+            list[list[str]]: One list of occurrence paths per distinct loop,
+                ordered parent to child, so each body is the parent of the
+                next and the last is the parent of the first.
+        """
+        cycles: list[list[str]] = []
+        seen: set[frozenset[str]] = set()
+
+        for start in self.parent_joints:
+            walked: list[str] = []
+            on_path: set[str] = set()
+            current: str | None = start
+
+            # Walk up the parent chain until it ends at a root or revisits a
+            # body already on this walk.
+            while current is not None and current not in on_path:
+                on_path.add(current)
+                walked.append(current)
+                joint = self.parent_joints.get(current)
+                current = joint.parent.fullPathName if joint is not None else None
+
+            if current is None:
+                continue  # reached a root body: no loop on this chain
+
+            # ``walked`` runs child -> parent; reverse it so the loop reads
+            # in the same direction as the arrows on the diagram.
+            cycle = walked[walked.index(current) :][::-1]
+            key = frozenset(cycle)
+            if key not in seen:
+                seen.add(key)
+                cycles.append(cycle)
+
+        return cycles
+
+    def validate_joint_graph(self) -> None:
+        """
+        Raise an ``ExportError`` if the derived graph is not a valid MJCF
+        kinematic tree.
+
+        Dropped joints are only logged -- the export can still produce a
+        usable model without them -- but a body with two parents or a closed
+        loop of joints cannot be represented at all. The joint graph is
+        written out first either way, and its path included in the message.
+
+        Raises:
+            ExportError: If any body has more than one parent joint, or any
+                set of bodies forms a closed loop.
+        """
+        graph = self.joint_graph
+        if graph is None or not (graph.conflicts or graph.cycles):
+            return
+
+        problems: list[str] = []
+        for child, kept, dropped in graph.conflicts:
+            problems.append(
+                f"Component '{graph.display_name(child)}' is the child "
+                f"(Component 1) of more than one joint: "
+                f"'{kept}' and '{dropped}'."
+            )
+        for cycle in graph.cycles:
+            names = " -> ".join(graph.display_name(p) for p in cycle)
+            problems.append(
+                f"These components form a closed loop of joints, each the "
+                f"parent of the next: "
+                f"{names} -> {graph.display_name(cycle[0])}."
+            )
+
+        message = "\n".join(f"- {problem}" for problem in problems)
+        message += (
+            "\n\nMuJoCo requires a kinematic tree where each body has exactly "
+            "one parent and there are no loops. Restructure the assembly so "
+            "each component is the child of a single joint, or suppress one "
+            "of the joints involved."
+        )
+
+        written = self.write_joint_graph()
+        if written:
+            message += "\n\nThe joint graph was written to:\n" + "\n".join(written)
+
+        raise ExportError(message)
+
+    def write_joint_graph(self) -> list[str]:
+        """
+        Write the joint graph diagrams into the export folder, at most once
+        per export.
+
+        Returns:
+            list[str]: The files written, or an empty list if there is no
+                graph yet, no destination, or nothing could be written.
+        """
+        if self._joint_graph_files is not None:
+            return self._joint_graph_files
+        if self.joint_graph is None or not self.exporter.destination:
+            return []
+
+        self._joint_graph_files = self.joint_graph.write(self.exporter.destination)
+        for file_path in self._joint_graph_files:
+            self.exporter.log(f"Wrote joint graph: {file_path}")
+        return self._joint_graph_files
+
+    @staticmethod
+    def exclusion_reason(occurrence) -> str:
+        """
+        Why an occurrence referenced by a joint has no exported body.
+
+        Mirrors the checks in ``MjcfBodyCollection.collect`` without building
+        an ``MjcfBody``, which would compute physical properties at very high
+        accuracy just to explain a joint the export dropped.
+
+        Returns:
+            str: A short reason read mid-sentence in the problem list, e.g.
+                ``"it is hidden"``, or an empty string if it cannot be told.
+        """
+        try:
+            if not occurrence.isLightBulbOn:
+                return "it is hidden"
+            component = occurrence.component
+            if not component.isBodiesFolderLightBulbOn:
+                return "its bodies folder is hidden"
+            bodies = component.bRepBodies
+            if len(bodies) == 0:
+                return "it has no bodies of its own"
+            if not any(body.isLightBulbOn for body in bodies):
+                return "all of its bodies are hidden"
+        except Exception:
+            pass
+        return ""
 
     def compute_ground_offset(self) -> float:
         """

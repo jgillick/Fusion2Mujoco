@@ -44,23 +44,39 @@ Once loaded, an **Export to Mujoco** button appears in the **Utilities** panel o
 <img src="docs/images/options_general.png" width="200" alt="" />
 <img src="docs/images/options_collisions.png" width="200" alt="" />
 
-| Option                      | Description                                                                                                                                                                                                                                                                                                                                                    |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Name**                    | The name used for the output folder and the `model` attribute of the MJCF file. Cannot be blank or contain characters that are invalid in file names. The name is remembered per model.                                                                                                                                                                        |
-| **Ground plane / Light**    | Adds a checkerboard ground plane and a directional light to the scene. The model root is automatically lifted so its lowest point sits exactly on the ground. Disable this when the model will be `<include>`d into a larger simulation environment.                                                                                                           |
-| **Include colors**          | Reads the appearance (color, roughness, metalness) assigned to each component in Fusion 360 and writes `<material>` assets into the MJCF. Textures and image-based patterns are not exported.                                                                                                                                                                  |
-| **Use short names**         | Shortens body and mesh names by dropping path segments that are identical across all instances, keeping only the segments needed to uniquely identify each body. Useful for deeply nested assemblies where the full path is unwieldy.                                                                                                                          |
-| **Collision meshes**        | Runs [CoACD](https://github.com/SarahWeiii/CoACD) on each visual mesh to produce a set of convex collision hulls. Enables accurate contact simulation but significantly increases export time (potentially several minutes per component). When enabled, visual geoms are placed in a non-colliding group and separate collision geoms are added to each body. |
-| **Concavity threshold**     | Default CoACD threshold when **Per-component collision** is off, or as the default for rows that follow the global value. Valid range is 0.01 – 1.0.                                                                                                                                                                                                           |
-| **Per-component collision** | Checkbox on a group that reveals a table (one row per exportable component): enable collision meshes and set a threshold per component. When checked, those values are saved on each component and used for export. When unchecked, only the global **Collision meshes** / **Concavity threshold** apply.                                                      |
+| Option                          | Description                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Name**                        | The name used for the output folder and the `model` attribute of the MJCF file. Cannot be blank or contain characters that are invalid in file names. The name is remembered per model.                                                                                                                                                                        |
+| **Ground plane / Light**        | Adds a checkerboard ground plane and a directional light to the scene. The model root is automatically lifted so its lowest point sits exactly on the ground. Disable this when the model will be `<include>`d into a larger simulation environment.                                                                                                           |
+| **Include colors**              | Reads the appearance (color, roughness, metalness) assigned to each component in Fusion 360 and writes `<material>` assets into the MJCF. Textures and image-based patterns are not exported.                                                                                                                                                                  |
+| **Use short names**             | Shortens body and mesh names by dropping path segments that are identical across all instances, keeping only the segments needed to uniquely identify each body. Useful for deeply nested assemblies where the full path is unwieldy.                                                                                                                          |
+| **Debug / Preview joint graph** | Builds the kinematic tree from the model's joints and opens a diagram of it in your browser, without exporting anything. This is useful for debugging when some bodies a floating "freejoint" bodies at export.                                                                                                                                                |
+| **Collision meshes**            | Runs [CoACD](https://github.com/SarahWeiii/CoACD) on each visual mesh to produce a set of convex collision hulls. Enables accurate contact simulation but significantly increases export time (potentially several minutes per component). When enabled, visual geoms are placed in a non-colliding group and separate collision geoms are added to each body. |
+| **Concavity threshold**         | Default CoACD threshold when **Per-component collision** is off, or as the default for rows that follow the global value. Valid range is 0.01 – 1.0.                                                                                                                                                                                                           |
+| **Per-component collision**     | Checkbox on a group that reveals a table (one row per exportable component): enable collision meshes and set a threshold per component. When checked, those values are saved on each component and used for export. When unchecked, only the global **Collision meshes** / **Concavity threshold** apply.                                                      |
 
 ## Limitations
+
+### A component can have bodies or other components, but not both
+
+Due to how the exporter is build, if a component contains both bodies and other components, some of the joints might not be recognized.
 
 ### Each component can only be the child link of one joint
 
 The MJCF format represents the kinematic structure as a tree, where each body has exactly one parent. If the same Fusion component appears as the child (Component 1) in more than one joint (standard or as-built), the export stops with an error naming the component and both joints. Structure your assembly so that each moving component is the child of exactly one joint.
 
 Suppressed joints are ignored.
+
+### Joints cannot form a loop
+
+For the same reason, a set of components whose joints form a closed loop (A is the
+parent of B, B of C, and C of A) cannot be represented: none of them has a path back
+to the world, so none can be placed. The export stops with an error naming the
+components in the loop.
+
+Closed loops are common in linkages such as four-bar mechanisms. MuJoCo models these
+with an `<equality>` constraint rather than a joint; break the loop in Fusion by
+suppressing one joint, then add the constraint to the exported XML by hand.
 
 ### As-built joints might not work
 
